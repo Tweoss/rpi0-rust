@@ -1,0 +1,15 @@
+[package]
+name = "rust"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bcm2835-lpa = "0.4.0"
+
+[[bin]]
+name = "rust"
+path = "src/main.rs"
+test = false
+doctest = false
+bench = false
+
