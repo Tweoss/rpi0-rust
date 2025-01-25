@@ -1,0 +1,7 @@
+
+[[language]]
+name = "rust"
+
+[language-server.ra-multiplex.config.check]
+allTargets = false
+
