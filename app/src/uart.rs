@@ -10,7 +10,7 @@ const DESIRED_BAUD_RATE: usize = 115_200;
 
 pub fn setup_uart(p14: Pin<14, { PinFsel::Unset }>, peripherals: &mut Peripherals) -> UartWriter {
     // Set pin 14 to TX. Needs to happen before enabling uart.
-    let p = p14.into_alt5();
+    let p = p14.into_alt5(|_, _| {});
     // TODO: UART input
     // Enable uart.
     dsb();
@@ -60,6 +60,8 @@ pub fn write_uart(bytes: &[u8]) {
     }
 }
 
+pub static mut UART_WRITER: Option<UartWriter> = None;
+
 pub struct UartWriter {
     p14: Pin<14, { PinFsel::Alt5 }>,
 }
@@ -80,11 +82,26 @@ impl core::fmt::Write for UartWriter {
 #[macro_export]
 macro_rules! dbg {
     ($w: expr, $( $args:expr),* ) => {
-        // use ::core::fmt::Write;
         $(
             core::fmt::Write::write_fmt($w, format_args!("[{}:{}:{}] ", file!(), line!(), column!())).unwrap();
             core::fmt::Write::write_fmt($w, format_args!("{} = {:?}", stringify!($args), $args)).unwrap();
             core::fmt::Write::write_str($w, "\n").unwrap();
         )*
+    };
+}
+
+// TODO: add lock
+/// Please drop ASAP.
+pub unsafe fn get_uart_mut() -> Option<&'static mut UartWriter> {
+    crate::uart::UART_WRITER.as_mut()
+}
+
+#[macro_export]
+macro_rules! writeln {
+    ($( $args:tt)* ) => {
+        if let Some(w) = unsafe { $crate::uart::get_uart_mut() } {
+            core::fmt::Write::write_fmt(w, format_args!($($args)*)).unwrap();
+            core::fmt::Write::write_str(w, "\n").unwrap();
+        }
     };
 }

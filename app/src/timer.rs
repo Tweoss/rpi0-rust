@@ -1,14 +1,14 @@
 use crate::dsb;
 
 // no dev barrier:
-fn timer_get_usec_raw() -> u32 {
+pub fn timer_get_usec_raw() -> u32 {
     unsafe { (0x20003004 as *mut u32).read_volatile() }
 }
 
 // in usec.  the lower 32-bits of the usec
 // counter: if you investigate in the broadcom
 // doc can see how to get the high 32-bits too.
-fn timer_get_usec() -> u32 {
+pub fn timer_get_usec() -> u32 {
     dsb();
     let u = timer_get_usec_raw();
     dsb();

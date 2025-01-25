@@ -1,11 +1,15 @@
+pub mod interrupts;
+
 use core::arch::{asm, global_asm};
+
+use interrupts::{enable_interrupts, interrupt_init, timer_init};
 
 use crate::{main, timer::delay_ms};
 
 const SUPER_MODE: u32 = 0b10011;
 const STACK_ADDR: u32 = 0x8000000;
-global_asm!(
-r#"
+
+global_asm!(r#"
 .section ".text.start"
 .globl _start
 _start:
@@ -61,6 +65,20 @@ pub unsafe extern "C" fn rsstart() {
     let count = &raw const __bss_end__ as usize - &raw const __bss_start__ as usize;
     core::ptr::write_bytes(&raw mut __bss_start__, 0, count);
     asm!("");
+
+    unsafe {
+        interrupt_init();
+    }
+
+    //     // now setup timer interrupts.
+    //     //  - Q: if you change 0x100?
+    //     //  - Q: if you change 16?
+    timer_init(16, 0x100);
+
+    //     // it's go time: enable global interrupts and we will
+    //     // be live.
+    //     printk("gonna enable ints globally!\n");
+    //     // Q: what happens (&why) if you don't do?
 
     // TODO: cycle count initialization
     // search for cycle_cnt_init.
