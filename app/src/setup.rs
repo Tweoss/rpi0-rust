@@ -2,7 +2,7 @@ pub mod interrupts;
 
 use core::arch::{asm, global_asm};
 
-use interrupts::{enable_interrupts, interrupt_init, timer_init};
+use interrupts::{interrupt_init, timer_init};
 
 use crate::{main, timer::delay_ms};
 

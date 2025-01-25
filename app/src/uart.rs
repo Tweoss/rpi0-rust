@@ -10,7 +10,7 @@ const DESIRED_BAUD_RATE: usize = 115_200;
 
 pub fn setup_uart(p14: Pin<14, { PinFsel::Unset }>, peripherals: &mut Peripherals) -> UartWriter {
     // Set pin 14 to TX. Needs to happen before enabling uart.
-    let p = p14.into_alt5(|_, _| {});
+    let p = p14.into_alt5();
     // TODO: UART input
     // Enable uart.
     dsb();
