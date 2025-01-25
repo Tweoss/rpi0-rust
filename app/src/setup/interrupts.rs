@@ -182,7 +182,7 @@ data_abort_asm:
 );
 
 extern "C" {
-    fn disable_interrupts();
+    pub fn disable_interrupts();
     pub fn enable_interrupts();
 }
 

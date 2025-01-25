@@ -3,12 +3,16 @@ use core::arch::asm;
 use bcm2835_lpa::{Peripherals, UART1};
 use pi0_register::{Pin, PinFsel};
 
-use crate::dsb;
+use crate::{
+    dsb,
+    setup::interrupts::{disable_interrupts, enable_interrupts},
+};
 
 const ASSUMED_CLOCK_RATE: usize = 250_000_000;
 const DESIRED_BAUD_RATE: usize = 115_200;
 
 pub fn setup_uart(p14: Pin<14, { PinFsel::Unset }>, peripherals: &mut Peripherals) -> UartWriter {
+    unsafe { disable_interrupts() };
     // Set pin 14 to TX. Needs to happen before enabling uart.
     let p = p14.into_alt5();
     // TODO: UART input
@@ -29,7 +33,6 @@ pub fn setup_uart(p14: Pin<14, { PinFsel::Unset }>, peripherals: &mut Peripheral
     uart.iir()
         .modify(|_, w| w.tx_ready().set_bit().data_ready().set_bit());
 
-    // TODO: disable interrupts
     // Set the baud rate.
     uart.baud().write(|w| unsafe {
         w.bits(
@@ -45,7 +48,7 @@ pub fn setup_uart(p14: Pin<14, { PinFsel::Unset }>, peripherals: &mut Peripheral
         .modify(|_, w| w.cts_enable().clear_bit().rts_enable().clear_bit());
     uart.cntl()
         .modify(|_, w| w.tx_enable().set_bit().rx_enable().set_bit());
-    // TODO: enable interrupts
+    unsafe { enable_interrupts() };
     UartWriter { p14: p }
 }
 
