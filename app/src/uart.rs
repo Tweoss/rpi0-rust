@@ -116,7 +116,18 @@ pub unsafe fn get_uart_mut_checked() -> Result<RefMut<'static, Option<UartWriter
 }
 
 #[macro_export]
-macro_rules! writeln {
+macro_rules! print {
+    ($( $args:tt)* ) => {
+        let guard = crate::setup::interrupts::guard::InterruptGuard::new();
+        if let Some(mut w) = unsafe { $crate::uart::get_uart_mut() }.as_mut() {
+            core::fmt::Write::write_fmt(&mut w, format_args!($($args)*)).unwrap();
+        }
+        drop(guard);
+    };
+}
+
+#[macro_export]
+macro_rules! println {
     ($( $args:tt)* ) => {
         let guard = crate::setup::interrupts::guard::InterruptGuard::new();
         if let Some(mut w) = unsafe { $crate::uart::get_uart_mut() }.as_mut() {

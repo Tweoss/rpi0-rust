@@ -10,7 +10,8 @@ use core::arch::asm;
 
 use bcm2835_lpa::Peripherals;
 use pi0_register::{Pin, PinFsel};
-use setup::interrupts::{enable_interrupts, get_cnt, get_period};
+use profile::{get_gprof_mut, store_gprof, Gprof};
+use setup::interrupts::{disable_interrupts, enable_interrupts, get_cnt, get_period};
 use timer::{delay_ms, timer_get_usec};
 use uart::{setup_uart, store_uart, uart_borrowed};
 
@@ -30,6 +31,10 @@ fn main() {
         set_on = !set_on;
         delay_ms(100);
     }
+
+    let gprof = unsafe { Gprof::gprof_init() };
+    store_gprof(gprof);
+
     enable_interrupts();
 
     //**************************************************
@@ -42,13 +47,13 @@ fn main() {
     //     //enable_cache();
     let mut iter = 0;
     let sum = 0;
-    let n = 20;
+    let n = 2000;
     while (unsafe { get_cnt() } < n) {
         assert!(!unsafe { uart_borrowed() });
         // let _guard = interrupts::guard::InterruptGuard::new();
         // Q: if you comment this out?  why do #'s change?
-        writeln!(
-            "iter={}: cnt = {}, time between interrupts = {} usec ({:x})\n",
+        println!(
+            "iter={}: cnt = {}, time between interrupts = {} usec ({:x})",
             iter,
             unsafe { get_cnt() },
             unsafe { get_period() },
@@ -57,17 +62,19 @@ fn main() {
         iter += 1;
     }
 
-    writeln!(
+    println!(
         "sum = {}, iter = {}, {}-{}",
         sum,
         iter,
         start,
         timer_get_usec(),
     );
+    disable_interrupts();
 
     // writeln!("continued interrupts");
+    unsafe { get_gprof_mut().as_mut().unwrap().gprof_dump() };
 
-    writeln!("FINISHED RSSTART");
+    println!("FINISHED RSSTART");
     let mut p0 = p0.into_output();
     p0.write(true);
     let mut set_on = false;

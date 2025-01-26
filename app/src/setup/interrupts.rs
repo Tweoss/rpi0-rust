@@ -2,7 +2,7 @@ use core::arch::{asm, global_asm};
 
 use bcm2835_lpa::Peripherals;
 
-use crate::{dsb, timer::timer_get_usec_raw};
+use crate::{dsb, profile::get_gprof_mut, timer::timer_get_usec_raw};
 
 // registers for ARM interrupt control
 // bcm2835; p112   [starts at 0x2000b200]
@@ -306,7 +306,7 @@ pub unsafe fn get_period() -> u32 {
 
 // called by <interrupt-asm.S> on each interrupt.
 #[no_mangle]
-unsafe extern "C" fn interrupt_vector(_pc: u32) {
+unsafe extern "C" fn interrupt_vector(pc: u32) {
     let peripherals = Peripherals::steal();
     // we don't know what the client code was doing, so
     // start with a device barrier in case it was in
@@ -339,6 +339,7 @@ unsafe extern "C" fn interrupt_vector(_pc: u32) {
     // than the interrupt subsystem.  so we need
     // a dev_barrier() before.
     dsb();
+    get_gprof_mut().as_mut().unwrap().gprof_inc(pc as usize);
 
     CNT += 1;
 

@@ -39,7 +39,7 @@ _start:
     @ bl _cstart        @ call our code to do initialization.
     bl rpi_reboot     @ if they return just reboot.
 
-    _interrupt_table_end:   @ end of the table.
+    @ _interrupt_table_end:   @ end of the table.
 "#
 , const SUPER_MODE, const STACK_ADDR);
 
@@ -80,7 +80,7 @@ pub unsafe extern "C" fn rsstart() {
     //     // now setup timer interrupts.
     //     //  - Q: if you change 0x100?
     //     //  - Q: if you change 16?
-    timer_init(256, 0x10);
+    timer_init(1, 0x100);
     // timer_init(16, 0x10);
     unsafe {
         interrupt_init();
