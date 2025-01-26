@@ -2,7 +2,7 @@ use core::arch::{asm, global_asm};
 
 use bcm2835_lpa::Peripherals;
 
-use crate::{dsb, timer::timer_get_usec_raw};
+use crate::{dsb, timer::timer_get_usec_raw, uart::uart_borrowed, writeln};
 
 // registers for ARM interrupt control
 // bcm2835; p112   [starts at 0x2000b200]
@@ -59,17 +59,21 @@ global_asm!(
 @ <.globl> makes name visible to other files
 .globl enable_interrupts  
 enable_interrupts:
-    mrs r0,cpsr         @ move cpsr to r0
-    bic r0,r0,#(1<<7)	@ clear 7th bit.
-    msr cpsr_c,r0		@ move r0 back to PSR
+    mrs r0,cpsr         @ move cpsr to r1
+    bic r1,r0,#(1<<7)	@ clear 7th bit.
+    msr cpsr_c,r1		@ move r1 back to PSR
+    lsr r0,r0,#7
+    and r0,r0,#1
     bx lr		        @ return.
 
-@ disable them
+@ disable them. returns whether or not they were previously enabled
 .globl disable_interrupts
 disable_interrupts:
     mrs r0,cpsr		       
-    orr r0,r0,#(1<<7)	@ set 7th bit
-    msr cpsr_c,r0
+    orr r1,r0,#(1<<7)	@ set 7th bit
+    msr cpsr_c,r1
+    lsr r0,r0,#7
+    and r0,r0,#1
     bx lr
 
 @ the interrupt table that we copy to 0x0.
@@ -181,9 +185,48 @@ data_abort_asm:
     INT_STACK_ADDR = const INT_STACK_ADDR,
 );
 
-extern "C" {
-    pub fn disable_interrupts();
-    pub fn enable_interrupts();
+mod asm {
+    extern "C" {
+        /// Returns 0 if previously enabled, 0 else.
+        pub fn enable_interrupts() -> u32;
+        /// Returns 0 if previously enabled, 0 else.
+        pub fn disable_interrupts() -> u32;
+    }
+}
+
+/// Returns true if the interrupts were previously enabled, and false if they
+/// were previously disabled.
+pub fn enable_interrupts() -> bool {
+    unsafe { asm::enable_interrupts() == 0 }
+}
+/// Returns true if the interrupts were previously enabled, and false if they
+/// were previously disabled.
+pub fn disable_interrupts() -> bool {
+    unsafe { asm::disable_interrupts() == 0 }
+}
+
+pub mod guard {
+    use crate::setup::interrupts::{disable_interrupts, enable_interrupts};
+
+    pub struct InterruptGuard {
+        was_enabled: bool,
+    }
+
+    impl InterruptGuard {
+        pub fn new() -> Self {
+            Self {
+                was_enabled: disable_interrupts(),
+            }
+        }
+    }
+
+    impl Drop for InterruptGuard {
+        fn drop(&mut self) {
+            if self.was_enabled {
+                enable_interrupts();
+            }
+        }
+    }
 }
 
 /// one-time initialization of general purpose

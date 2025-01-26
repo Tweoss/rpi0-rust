@@ -1,10 +1,21 @@
 pub mod interrupts;
 
-use core::arch::{asm, global_asm};
+use core::{
+    arch::{asm, global_asm},
+    fmt::Write,
+    ops::DerefMut,
+    panic::PanicInfo,
+};
 
-use interrupts::{interrupt_init, timer_init};
+use bcm2835_lpa::Peripherals;
+use interrupts::{disable_interrupts, interrupt_init, timer_init};
+use pi0_register::{Pin, PinFsel};
 
-use crate::{main, timer::delay_ms};
+use crate::{
+    main,
+    timer::delay_ms,
+    uart::{get_uart_mut_checked, setup_uart, UartWriter},
+};
 
 const SUPER_MODE: u32 = 0b10011;
 const STACK_ADDR: u32 = 0x8000000;
@@ -66,22 +77,50 @@ pub unsafe extern "C" fn rsstart() {
     core::ptr::write_bytes(&raw mut __bss_start__, 0, count);
     asm!("");
 
-    unsafe {
-        interrupt_init();
-    }
-
     //     // now setup timer interrupts.
     //     //  - Q: if you change 0x100?
     //     //  - Q: if you change 16?
-    timer_init(16, 0x100);
-
-    //     // it's go time: enable global interrupts and we will
-    //     // be live.
-    //     printk("gonna enable ints globally!\n");
-    //     // Q: what happens (&why) if you don't do?
+    timer_init(256, 0x10);
+    // timer_init(16, 0x10);
+    unsafe {
+        interrupt_init();
+    }
 
     // TODO: cycle count initialization
     // search for cycle_cnt_init.
 
     main()
+}
+
+#[panic_handler]
+fn panic(info: &PanicInfo) -> ! {
+    disable_interrupts();
+    // If the uart is setup and not in use, then directly use it.
+    // Otherwise, setup and write there.
+    let construct_uart = || {
+        let pin = unsafe { Pin::<14, { PinFsel::Unset }>::forge() };
+        setup_uart(pin, unsafe { &mut Peripherals::steal() })
+    };
+
+    fn write_panic(mut writer: impl DerefMut<Target = UartWriter>, info: &PanicInfo<'_>) {
+        let mut w = writer.deref_mut();
+        let _ = w.write_str("\npi panicked");
+        if let Some(location) = info.location() {
+            let _ = w.write_fmt(format_args!(
+                " at {}:{}:{}",
+                location.file(),
+                location.line(),
+                location.column()
+            ));
+        }
+        let _ = w.write_fmt(format_args!("\n{}\n", info.message()));
+    }
+    if let Ok(mut reference) = unsafe { get_uart_mut_checked() } {
+        if let Some(w) = reference.deref_mut() {
+            write_panic(w, info);
+            rpi_reboot();
+        }
+    }
+    write_panic(&mut construct_uart(), info);
+    rpi_reboot();
 }

@@ -10,7 +10,7 @@ macro_rules! HListType {
 }
 macro_rules! HListValue {
     ( $( $x:expr ),* ) => {
-        frunk::hlist![$(Pin::<$x, {PinFsel::Unset}>,)*]
+        frunk::hlist![$(Pin::<$x, {PinFsel::Unset}>::forge(),)*]
     };
 }
 

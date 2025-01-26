@@ -6,13 +6,13 @@ mod setup;
 mod timer;
 mod uart;
 
-use core::{arch::asm, panic::PanicInfo};
+use core::arch::asm;
 
 use bcm2835_lpa::Peripherals;
 use pi0_register::{Pin, PinFsel};
-use setup::interrupts::enable_interrupts;
-use timer::delay_ms;
-use uart::{setup_uart, UART_WRITER};
+use setup::interrupts::{enable_interrupts, get_cnt, get_period};
+use timer::{delay_ms, timer_get_usec};
+use uart::{setup_uart, store_uart, uart_borrowed};
 
 fn main() {
     let mut peripherals = unsafe { Peripherals::steal() };
@@ -20,40 +20,7 @@ fn main() {
     let (p0, pins): (Pin<0, { PinFsel::Unset }>, _) = pins.pluck();
     let (p14, _pins): (Pin<14, { PinFsel::Unset }>, _) = pins.pluck();
     let w = setup_uart(p14, &mut peripherals);
-    unsafe { UART_WRITER.replace(w) };
-    // dbg!(&mut w, "hi", 1, p15);
-
-    unsafe { enable_interrupts() };
-    writeln!("enabled interrupts");
-    // let w = UART_WRITER.unwrap();
-
-    // //**************************************************
-    // // loop until we get N interrupts, tracking how many
-    // // times we can iterate.
-    // let start = timer_get_usec();
-
-    // //     // Q: what happens if you enable cache?  Why are some parts
-    // //     // the same, some change?
-    // //     //enable_cache();
-    // let mut iter = 0;
-    // let sum = 0;
-    // // #   define N 20
-    // let n = 20;
-    // while (unsafe { get_cnt() } < n) {
-    //     // Q: if you comment this out?  why do #'s change?
-    //     // writeln!(
-    //     //     w,
-    //     //     "iter={}: cnt = {}, time between interrupts = {} usec ({:x})\n",
-    //     //     iter,
-    //     //     unsafe { get_cnt() },
-    //     //     unsafe { get_period() },
-    //     //     unsafe { get_period() },
-    //     // )
-    //     // .unwrap();
-    //     iter += 1;
-    // }
-
-    // writeln!(w, "sum = {}, iter = {}", sum, iter).unwrap();
+    store_uart(w);
 
     let mut p0 = p0.into_output();
     p0.write(true);
@@ -61,16 +28,41 @@ fn main() {
     for _ in 0..5 {
         p0.write(set_on);
         set_on = !set_on;
-        delay_ms(500);
+        delay_ms(100);
+    }
+    enable_interrupts();
+
+    //**************************************************
+    // loop until we get N interrupts, tracking how many
+    // times we can iterate.
+    let start = timer_get_usec();
+
+    //     // Q: what happens if you enable cache?  Why are some parts
+    //     // the same, some change?
+    //     //enable_cache();
+    let mut iter = 0;
+    let sum = 0;
+    // #   define N 20
+    let n = 20;
+    while (unsafe { get_cnt() } < n) {
+        assert!(!unsafe { uart_borrowed() });
+        // let _guard = interrupts::guard::InterruptGuard::new();
+        // Q: if you comment this out?  why do #'s change?
+        writeln!(
+            "iter={}: cnt = {}, time between interrupts = {} usec ({:x})\n",
+            iter,
+            unsafe { get_cnt() },
+            unsafe { get_period() },
+            unsafe { get_period() },
+        );
+        iter += 1;
     }
 
-    // writeln!(
-    //     unsafe { UART_WRITER.0.as_mut().unwrap() },
-    //     "continued interrupts"
-    // )
-    // .unwrap();
+    // writeln!("sum = {}, iter = {}", sum, iter);
 
-    // write!(w, "FINISHED RSSTART").unwrap();
+    // writeln!("continued interrupts");
+
+    // writeln!("FINISHED RSSTART");
 }
 
 /// Device synchronization barrier
@@ -81,14 +73,6 @@ fn dsb() {
             tmp = in(reg) 0,
         )
     }
-}
-
-/// This function is called on panic.
-#[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
-    // TODO: print to uart if exists and initialized.
-    // then reboot
-    loop {}
 }
 
 /// Demos loopback from gpio 9-> 10

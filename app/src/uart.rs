@@ -1,18 +1,18 @@
-use core::arch::asm;
+use core::{
+    arch::asm,
+    cell::{BorrowMutError, LazyCell, RefCell, RefMut},
+};
 
 use bcm2835_lpa::{Peripherals, UART1};
 use pi0_register::{Pin, PinFsel};
 
-use crate::{
-    dsb,
-    setup::interrupts::{disable_interrupts, enable_interrupts},
-};
+use crate::{dsb, setup::interrupts::guard};
 
 const ASSUMED_CLOCK_RATE: usize = 250_000_000;
 const DESIRED_BAUD_RATE: usize = 115_200;
 
 pub fn setup_uart(p14: Pin<14, { PinFsel::Unset }>, peripherals: &mut Peripherals) -> UartWriter {
-    unsafe { disable_interrupts() };
+    let _guard = guard::InterruptGuard::new();
     // Set pin 14 to TX. Needs to happen before enabling uart.
     let p = p14.into_alt5();
     // TODO: UART input
@@ -48,8 +48,7 @@ pub fn setup_uart(p14: Pin<14, { PinFsel::Unset }>, peripherals: &mut Peripheral
         .modify(|_, w| w.cts_enable().clear_bit().rts_enable().clear_bit());
     uart.cntl()
         .modify(|_, w| w.tx_enable().set_bit().rx_enable().set_bit());
-    unsafe { enable_interrupts() };
-    UartWriter { p14: p }
+    UartWriter { _p14: p }
 }
 
 pub fn write_uart(bytes: &[u8]) {
@@ -63,19 +62,13 @@ pub fn write_uart(bytes: &[u8]) {
     }
 }
 
-pub static mut UART_WRITER: Option<UartWriter> = None;
+static mut UART_WRITER: LazyCell<RefCell<Option<UartWriter>>> = LazyCell::new(|| None.into());
 
 pub struct UartWriter {
-    p14: Pin<14, { PinFsel::Alt5 }>,
+    _p14: Pin<14, { PinFsel::Alt5 }>,
 }
 
-impl UartWriter {
-    pub fn consume(self) -> Pin<14, { PinFsel::Alt5 }> {
-        self.p14
-    }
-}
-
-impl core::fmt::Write for UartWriter {
+impl core::fmt::Write for &mut UartWriter {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         write_uart(s.as_bytes());
         Ok(())
@@ -84,27 +77,52 @@ impl core::fmt::Write for UartWriter {
 
 #[macro_export]
 macro_rules! dbg {
-    ($w: expr, $( $args:expr),* ) => {
-        $(
-            core::fmt::Write::write_fmt($w, format_args!("[{}:{}:{}] ", file!(), line!(), column!())).unwrap();
-            core::fmt::Write::write_fmt($w, format_args!("{} = {:?}", stringify!($args), $args)).unwrap();
-            core::fmt::Write::write_str($w, "\n").unwrap();
-        )*
+    ($( $args:expr),* ) => {
+        let guard = crate::setup::interrupts::guard::InterruptGuard::new();
+        if let Some(mut w) = unsafe { $crate::uart::get_uart_mut() }.as_mut() {
+            $(
+                core::fmt::Write::write_fmt(&mut w, format_args!("[{}:{}:{}] ", file!(), line!(), column!())).unwrap();
+                core::fmt::Write::write_fmt(&mut w, format_args!("{} = {:?}", stringify!($args), $args)).unwrap();
+                core::fmt::Write::write_str(&mut w, "\n").unwrap();
+            )*
+        }
+        drop(guard);
     };
 }
 
-// TODO: add lock
-/// Please drop ASAP.
-pub unsafe fn get_uart_mut() -> Option<&'static mut UartWriter> {
-    crate::uart::UART_WRITER.as_mut()
+#[allow(static_mut_refs)]
+pub fn store_uart(writer: UartWriter) {
+    let guard = guard::InterruptGuard::new();
+    unsafe { UART_WRITER.replace(Some(writer)) };
+    drop(guard);
+}
+
+#[allow(static_mut_refs)]
+pub unsafe fn uart_borrowed() -> bool {
+    LazyCell::force(&crate::uart::UART_WRITER)
+        .try_borrow_mut()
+        .is_err()
+}
+
+/// Panics if UART_WRITER is already borrowed.
+#[allow(static_mut_refs)]
+pub unsafe fn get_uart_mut() -> RefMut<'static, Option<UartWriter>> {
+    LazyCell::force(&crate::uart::UART_WRITER).borrow_mut()
+}
+#[allow(static_mut_refs)]
+pub unsafe fn get_uart_mut_checked() -> Result<RefMut<'static, Option<UartWriter>>, BorrowMutError>
+{
+    LazyCell::force(&crate::uart::UART_WRITER).try_borrow_mut()
 }
 
 #[macro_export]
 macro_rules! writeln {
     ($( $args:tt)* ) => {
-        if let Some(w) = unsafe { $crate::uart::get_uart_mut() } {
-            core::fmt::Write::write_fmt(w, format_args!($($args)*)).unwrap();
-            core::fmt::Write::write_str(w, "\n").unwrap();
+        let guard = crate::setup::interrupts::guard::InterruptGuard::new();
+        if let Some(mut w) = unsafe { $crate::uart::get_uart_mut() }.as_mut() {
+            core::fmt::Write::write_fmt(&mut w, format_args!($($args)*)).unwrap();
+            core::fmt::Write::write_str(&mut w, "\n").unwrap();
         }
+        drop(guard);
     };
 }

@@ -44,7 +44,10 @@ impl ConstParamTy_ for PinFsel {}
 
 pub struct Pin<const INDEX: usize, const FSEL: PinFsel>
 where
-    If<{ valid_pin(INDEX) }>: True;
+    If<{ valid_pin(INDEX) }>: True,
+{
+    _hidden: (),
+}
 
 impl<const INDEX: usize, const FSEL: PinFsel> core::fmt::Debug for Pin<INDEX, FSEL>
 where
@@ -59,6 +62,10 @@ impl<const I: usize, const F: PinFsel> Pin<I, F>
 where
     If<{ valid_pin(I) }>: True,
 {
+    pub unsafe fn forge() -> Pin<I, { F }> {
+        Self { _hidden: () }
+    }
+
     fn set_fsel(i: usize, and_mask: u32, or_mask: u32) {
         let (a, o) = (and_mask, or_mask);
         unsafe {
@@ -79,27 +86,27 @@ where
         let and = !(0b111 << ((I % 10) * 3));
         let or = 0b001 << ((I % 10) * 3);
         Self::set_fsel(I, and, or);
-        Pin::<I, { PinFsel::Output }>
+        Pin::<I, { PinFsel::Output }> { _hidden: () }
     }
 
     pub fn into_input(self) -> Pin<I, { PinFsel::Input }> {
         let and = !(0b111 << ((I % 10) * 3));
         Self::set_fsel(I, and, 0);
-        Pin::<I, { PinFsel::Input }>
+        Pin::<I, { PinFsel::Input }> { _hidden: () }
     }
 
     pub fn into_alt0(self) -> Pin<I, { PinFsel::Alt0 }> {
         let and = !(0b111 << ((I % 10) * 3));
         let or = 0b100 << ((I % 10) * 3);
         Self::set_fsel(I, and, or);
-        Pin::<I, { PinFsel::Alt0 }>
+        Pin::<I, { PinFsel::Alt0 }> { _hidden: () }
     }
 
     pub fn into_alt5(self) -> Pin<I, { PinFsel::Alt5 }> {
         let and = !(0b111 << ((I % 10) * 3));
         let or = 0b010 << ((I % 10) * 3);
         Self::set_fsel(I, and, or);
-        Pin::<I, { PinFsel::Alt5 }>
+        Pin::<I, { PinFsel::Alt5 }> { _hidden: () }
     }
 }
 
@@ -146,14 +153,3 @@ where
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-
-//     #[test]
-//     fn it_works() {
-//         let result = add(2, 2);
-//         assert_eq!(result, 4);
-//     }
-// }
