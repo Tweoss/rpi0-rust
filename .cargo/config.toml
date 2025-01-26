@@ -1,11 +1,7 @@
 [unstable]
 build-std = ["core", "compiler_builtins"]
 
-[workspace]
-resolver = "2"
-
 [build]
 target = ["app/armv6zk-none-eabihf.json"]
-all_targets = false
 rustflags = ["-C", "link-arg=-Tapp/link.x"]
 

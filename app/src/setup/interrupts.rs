@@ -2,34 +2,35 @@ use core::arch::{asm, global_asm};
 
 use bcm2835_lpa::Peripherals;
 
-use crate::{dsb, timer::timer_get_usec_raw, uart::uart_borrowed, writeln};
+use crate::{dsb, timer::timer_get_usec_raw};
 
 // registers for ARM interrupt control
 // bcm2835; p112   [starts at 0x2000b200]
 const IRQ_BASE: u32 = 0x2000b200;
-const IRQ_BASIC_PENDING: u32 = IRQ_BASE + 0x00; // 0x20;
-const IRQ_PENDING_1: u32 = IRQ_BASE + 0x04; // 0x20;
-const IRQ_PENDING_2: u32 = IRQ_BASE + 0x08; // 0x20;
-const IRQ_FIQ_CONTROL: u32 = IRQ_BASE + 0x0c; // 0x20;
-const IRQ_ENABLE_1: u32 = IRQ_BASE + 0x10; // 0x21;
-const IRQ_ENABLE_2: u32 = IRQ_BASE + 0x14; // 0x21;
+// const IRQ_BASIC_PENDING: u32 = IRQ_BASE + 0x00; // 0x20;
+// const IRQ_PENDING_1: u32 = IRQ_BASE + 0x04; // 0x20;
+// const IRQ_PENDING_2: u32 = IRQ_BASE + 0x08; // 0x20;
+// const IRQ_FIQ_CONTROL: u32 = IRQ_BASE + 0x0c; // 0x20;
+// const IRQ_ENABLE_1: u32 = IRQ_BASE + 0x10; // 0x21;
+// const IRQ_ENABLE_2: u32 = IRQ_BASE + 0x14; // 0x21;
 const IRQ_ENABLE_BASIC: u32 = IRQ_BASE + 0x18; // 0x21;
-const IRQ_DISABLE_1: u32 = IRQ_BASE + 0x1c; // 0x21;
-const IRQ_DISABLE_2: u32 = IRQ_BASE + 0x20; // 0x22;
-const IRQ_DISABLE_BASIC: u32 = IRQ_BASE + 0x24; // 0x22;
+
+// const IRQ_DISABLE_1: u32 = IRQ_BASE + 0x1c; // 0x21;
+// const IRQ_DISABLE_2: u32 = IRQ_BASE + 0x20; // 0x22;
+// const IRQ_DISABLE_BASIC: u32 = IRQ_BASE + 0x24; // 0x22;
 
 const ARM_TIMER_IRQ: u32 = 1 << 0;
 // registers for ARM timer
 // bcm 14.2 p 196
 const ARM_TIMER_BASE: u32 = 0x2000B400;
 const ARM_TIMER_LOAD: u32 = ARM_TIMER_BASE + 0x00; // p196
-const ARM_TIMER_VALUE: u32 = ARM_TIMER_BASE + 0x04; // read-only
+                                                   // const ARM_TIMER_VALUE: u32 = ARM_TIMER_BASE + 0x04; // read-only
 const ARM_TIMER_CONTROL: u32 = ARM_TIMER_BASE + 0x08;
 const ARM_TIMER_IRQ_CLEAR: u32 = ARM_TIMER_BASE + 0x0c;
 // ...
-const ARM_TIMER_RELOAD: u32 = ARM_TIMER_BASE + 0x18;
-const ARM_TIMER_PREDIV: u32 = ARM_TIMER_BASE + 0x1c;
-const ARM_TIMER_COUNTER: u32 = ARM_TIMER_BASE + 0x20;
+// const ARM_TIMER_RELOAD: u32 = ARM_TIMER_BASE + 0x18;
+// const ARM_TIMER_PREDIV: u32 = ARM_TIMER_BASE + 0x1c;
+// const ARM_TIMER_COUNTER: u32 = ARM_TIMER_BASE + 0x20;
 
 const INT_STACK_ADDR: u32 = 0x9000000;
 

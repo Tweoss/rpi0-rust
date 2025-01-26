@@ -1,7 +1,6 @@
 [workspace]
-
 members = [
     "app",
     "pins",
 ]
-
+resolver = "2"

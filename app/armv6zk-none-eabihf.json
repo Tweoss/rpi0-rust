@@ -37,6 +37,5 @@
     "-march=armv6z",
     "-mlittle-endian",
     "-mfloat-abi=hard"
-  ],
-  "llvm-floatabi": "hard"
+  ]
 }

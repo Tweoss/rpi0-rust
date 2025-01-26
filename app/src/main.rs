@@ -42,7 +42,6 @@ fn main() {
     //     //enable_cache();
     let mut iter = 0;
     let sum = 0;
-    // #   define N 20
     let n = 20;
     while (unsafe { get_cnt() } < n) {
         assert!(!unsafe { uart_borrowed() });
@@ -58,11 +57,25 @@ fn main() {
         iter += 1;
     }
 
-    // writeln!("sum = {}, iter = {}", sum, iter);
+    writeln!(
+        "sum = {}, iter = {}, {}-{}",
+        sum,
+        iter,
+        start,
+        timer_get_usec(),
+    );
 
     // writeln!("continued interrupts");
 
-    // writeln!("FINISHED RSSTART");
+    writeln!("FINISHED RSSTART");
+    let mut p0 = p0.into_output();
+    p0.write(true);
+    let mut set_on = false;
+    for _ in 0..5 {
+        p0.write(set_on);
+        set_on = !set_on;
+        delay_ms(100);
+    }
 }
 
 /// Device synchronization barrier
@@ -72,57 +85,5 @@ fn dsb() {
             "mcr p15, 0, {tmp}, c7, c10, 4",
             tmp = in(reg) 0,
         )
-    }
-}
-
-/// Demos loopback from gpio 9-> 10
-/// blinks leds on gpio 26 and gpio 0 in an alteranting pattern
-fn alt_blink(p: &Peripherals) -> ! {
-    p.GPIO.gpfsel0().modify(|_, w| w.fsel9().output());
-    p.GPIO.gpfsel1().modify(|_, w| w.fsel10().input());
-
-    p.GPIO.gpfsel2().modify(|_, w| w.fsel26().output());
-    p.GPIO.gpfsel0().modify(|_, w| w.fsel0().output());
-
-    unsafe { p.GPIO.gpclr0().write_with_zero(|w| w.clr26().bit(true)) };
-
-    let mut pin_9_on = false;
-    loop {
-        let read_in = p.GPIO.gplev0().read().lev10().bit();
-
-        if !read_in {
-            unsafe { p.GPIO.gpset0().write_with_zero(|w| w.set0().set_bit()) };
-        } else {
-            unsafe {
-                p.GPIO
-                    .gpclr0()
-                    .write_with_zero(|w| w.clr0().clear_bit_by_one())
-            };
-        }
-
-        for _ in 0..100000 {
-            unsafe { asm!("nop") }
-        }
-        pin_9_on = !pin_9_on;
-
-        if pin_9_on {
-            unsafe {
-                p.GPIO
-                    .gpset0()
-                    .write_with_zero(|w| w.set9().bit(pin_9_on).set26().set_bit())
-            };
-            unsafe { p.GPIO.gpset0().write_with_zero(|w| w.set26().set_bit()) };
-        } else {
-            unsafe {
-                p.GPIO
-                    .gpclr0()
-                    .write_with_zero(|w| w.clr9().clear_bit_by_one().clr26().clear_bit_by_one())
-            };
-            unsafe {
-                p.GPIO
-                    .gpclr0()
-                    .write_with_zero(|w| w.clr26().clear_bit_by_one())
-            };
-        }
     }
 }
