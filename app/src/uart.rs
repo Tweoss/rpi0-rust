@@ -75,21 +75,6 @@ impl core::fmt::Write for &mut UartWriter {
     }
 }
 
-#[macro_export]
-macro_rules! dbg {
-    ($( $args:expr),* ) => {
-        let guard = crate::setup::interrupts::guard::InterruptGuard::new();
-        if let Some(mut w) = unsafe { $crate::uart::get_uart_mut() }.as_mut() {
-            $(
-                core::fmt::Write::write_fmt(&mut w, format_args!("[{}:{}:{}] ", file!(), line!(), column!())).unwrap();
-                core::fmt::Write::write_fmt(&mut w, format_args!("{} = {:?}", stringify!($args), $args)).unwrap();
-                core::fmt::Write::write_str(&mut w, "\n").unwrap();
-            )*
-        }
-        drop(guard);
-    };
-}
-
 #[allow(static_mut_refs)]
 pub fn store_uart(writer: UartWriter) {
     let guard = guard::InterruptGuard::new();
@@ -115,6 +100,23 @@ pub unsafe fn get_uart_mut_checked() -> Result<RefMut<'static, Option<UartWriter
     LazyCell::force(&crate::uart::UART_WRITER).try_borrow_mut()
 }
 
+/// This will error if the args cause an interrupt (like software interrupt).
+#[macro_export]
+macro_rules! dbg {
+    ($( $args:expr),* ) => {
+        let guard = crate::setup::interrupts::guard::InterruptGuard::new();
+        if let Some(mut w) = unsafe { $crate::uart::get_uart_mut() }.as_mut() {
+            $(
+                core::fmt::Write::write_fmt(&mut w, format_args!("[{}:{}:{}] ", file!(), line!(), column!())).unwrap();
+                core::fmt::Write::write_fmt(&mut w, format_args!("{} = {:?}", stringify!($args), $args)).unwrap();
+                core::fmt::Write::write_str(&mut w, "\n").unwrap();
+            )*
+        }
+        drop(guard);
+    };
+}
+
+/// This will error if the args cause an interrupt (like software interrupt).
 #[macro_export]
 macro_rules! print {
     ($( $args:tt)* ) => {
@@ -126,6 +128,7 @@ macro_rules! print {
     };
 }
 
+/// This will error if the args cause an interrupt (like software interrupt).
 #[macro_export]
 macro_rules! println {
     ($( $args:tt)* ) => {

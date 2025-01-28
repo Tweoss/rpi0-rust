@@ -1,7 +1,7 @@
-use core::{
-    cell::{LazyCell, RefCell, RefMut},
-    slice,
-};
+extern crate alloc;
+
+use alloc::vec::Vec;
+use core::cell::{LazyCell, RefCell, RefMut};
 
 use crate::{print, println, setup::interrupts::guard::InterruptGuard};
 
@@ -14,13 +14,10 @@ extern "C" {
     static mut __bss_end__: u8;
 }
 
-const HEAP_START: usize = 1024 * 1024;
-const ALLOCATED_AMOUNT: usize = 2 * 1024 * 1024;
-
 static mut GPROF: LazyCell<RefCell<Option<Gprof>>> = LazyCell::new(|| None.into());
 
 pub struct Gprof {
-    buffer: &'static mut [u32],
+    buffer: Vec<u32>,
     pc_start: usize,
 }
 
@@ -42,26 +39,10 @@ impl Gprof {
         const START: usize = 0x8000;
         let end = (&raw const __code_end__);
         println!("using start {:#08x}, end {:#08x}", START, end as usize);
-        println!(
-            "code: {:#08x}-{:#08x}",
-            &raw const __code_start__ as usize, &raw const __code_end__ as usize
-        );
-        println!(
-            "data: {:#08x}-{:#08x}",
-            &raw const __data_start__ as usize, &raw const __data_end__ as usize
-        );
-        println!(
-            "bss: {:#08x}-{:#08x}",
-            &raw const __bss_start__ as usize, &raw const __bss_end__ as usize
-        );
-        // Just take a segment of memory and pretend we own it.
+        let mut buffer = Vec::new();
+        buffer.resize(((end as usize) - START) / (size_of::<usize>()), 0);
         Gprof {
-            buffer: unsafe {
-                slice::from_raw_parts_mut(
-                    HEAP_START as *mut u32,
-                    ((end as usize) - START) / (size_of::<usize>()),
-                )
-            },
+            buffer,
             pc_start: START,
         }
     }
@@ -87,6 +68,5 @@ impl Gprof {
         println!("");
 
         println!("Total count: {}", total);
-        // self.buffer[pc - self.pc_start] += 1;
     }
 }

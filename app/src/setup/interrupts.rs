@@ -2,7 +2,8 @@ use core::arch::{asm, global_asm};
 
 use bcm2835_lpa::Peripherals;
 
-use crate::{dsb, profile::get_gprof_mut, timer::timer_get_usec_raw};
+use super::USER_MODE;
+use crate::{dsb, println, profile::get_gprof_mut, setup::rpi_reboot, timer::timer_get_usec_raw};
 
 // registers for ARM interrupt control
 // bcm2835; p112   [starts at 0x2000b200]
@@ -169,10 +170,47 @@ undefined_instruction_asm:
     mov sp, {INT_STACK_ADDR}
     sub r0, lr, 4
     bl undefined_instruction_vector
+
+
+@ runs at system level (p.a2-5): assumes we have a sp
+@
+@ you're going to call:
+@    int syscall_vector(unsigned pc, uint32_t r0) 
+@
+@   1 save regs as with interrupt vector
+@   2 figure out the lr offset you need to correct.
+@   3 mov the original r0 into r1 (so it's the second
+@     parameter to <syscall_vector>)
+@   4 mov the pointer to the syscall inst into r0
+@     (so its the first parameter to <syscall_vector>)
+@   5 call <syscall_vector>
+@   6 restore regs: must be identical to what got pushed 
+@     at step (1)
+@   - return from the exception (look at interrupt_asm)
 software_interrupt_asm:
-    mov sp, {INT_STACK_ADDR}
-    sub r0, lr, 4
-    bl syscall_vector
+    mov sp, {INT_STACK_ADDR}  @ TODO: check necessary
+    @ sub   lr, lr, #4
+
+    push  {{r4-r12,lr}}     @ XXX: pushing too many 
+                            @ registers: only need caller
+                            @ saved.
+
+    sub   r0, lr, 4         @ Pass old pc (go back by 4) as arg 0 
+    bl    syscall_vector    @ C function: expects C 
+                            @ calling conventions.
+
+    pop   {{r4-r12,lr}} 	@ pop integer registers
+                            @ this MUST MATCH the push.
+                            @ very common mistake.
+
+    @ return from interrupt handler: will re-enable general ints.
+    @ Q: what happens if you do "mov" instead?
+    @ Q: what other instructions could we use?
+    movs    pc, lr          @ 1: moves <spsr> into <cpsr> 
+                            @ 2. moves <lr> into the <pc> of that mode.
+    @ mov sp, {INT_STACK_ADDR}
+    @ sub r0, lr, 4
+    @ bl syscall_vector
 prefetch_abort_asm:
     mov sp, {INT_STACK_ADDR}
     sub r0, lr, 4
@@ -182,8 +220,35 @@ data_abort_asm:
     sub r0, lr, 4
     bl data_abort_vector
 
+@
+@ utility routine:
+@   1. switch to user mode, 
+@   2. set setting <sp> to <stack>
+@   3. jump to the address in <pc> 
+@ 
+@ recall:
+@   - pc is passed in r0
+@   - stack passed in r1
+@
+@ look at notes/mode-bugs for examples on what to do
+@    - change modes using the cps instruction.
+@
+@ does not return
+run_user_code_asm:
+    mov r2,  {USER_MODE}
+    orr r2,r2,#(1<<7)    @ disable interrupts.
+    msr cpsr, r2
+    @ prefetch flush
+    mov r3, #0;
+    mcr p15, 0, r3, c7, c5, 4
+    @ set new stack pointer from r1
+    mov sp, r1
+    @ jump to the program counter in r0
+    mov pc, r0
+    @ user main should never return
 "#,
     INT_STACK_ADDR = const INT_STACK_ADDR,
+    USER_MODE = const USER_MODE,
 );
 
 mod asm {
@@ -192,6 +257,7 @@ mod asm {
         pub fn enable_interrupts() -> u32;
         /// Returns 0 if previously enabled, 0 else.
         pub fn disable_interrupts() -> u32;
+        pub fn run_user_code_asm(f: extern "C" fn() -> !, sp: *const u32) -> !;
     }
 }
 
@@ -204,6 +270,15 @@ pub fn enable_interrupts() -> bool {
 /// were previously disabled.
 pub fn disable_interrupts() -> bool {
     unsafe { asm::disable_interrupts() == 0 }
+}
+
+#[allow(static_mut_refs)]
+pub fn run_user_code(f: extern "C" fn() -> !) {
+    // Use the top of the stack because it grows down.
+    let stack = (unsafe { USER_STACK.last().unwrap() }) as *const u32;
+    assert!(!stack.is_null());
+    assert!(stack.is_aligned());
+    unsafe { asm::run_user_code_asm(f, stack) }
 }
 
 pub mod guard {
@@ -271,9 +346,13 @@ pub unsafe fn interrupt_init() {
 extern "C" fn fast_interrupt_vector(pc: u32) {
     panic!("unexpected fast interrupt: pc={}\n", pc);
 }
+
+const USER_STACK_SIZE: usize = 1024 * 64 * 2;
+static mut USER_STACK: [u32; USER_STACK_SIZE] = [0; USER_STACK_SIZE];
+
 #[no_mangle]
-extern "C" fn syscall_vector(pc: u32) {
-    panic!("unexpected syscall: pc={}\n", pc);
+extern "C" fn syscall_vector(pc: u32) -> i32 {
+    crate::syscall::syscall_vector(pc)
 }
 #[no_mangle]
 extern "C" fn reset_vector(pc: u32) {
@@ -358,7 +437,7 @@ unsafe extern "C" fn interrupt_vector(pc: u32) {
     // access is a read that we wait for, but for the
     // moment we live in simplicity: there's enough
     // bad stuff that can happen with interrupts that
-    // we don't need to do tempt entropy by getting cute.
+    // we don't need to tempt entropy by getting cute.
     dsb();
 
     // Q: what happens (&why) if you uncomment the

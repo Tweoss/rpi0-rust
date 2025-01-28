@@ -18,6 +18,7 @@ use crate::{
 };
 
 const SUPER_MODE: u32 = 0b10011;
+const USER_MODE: u32 = 0b10000;
 const STACK_ADDR: u32 = 0x8000000;
 
 global_asm!(r#"

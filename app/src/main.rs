@@ -1,8 +1,12 @@
 #![no_std] // don't link the Rust standard library
 #![no_main] // disable all Rust-level entry points
+#![feature(alloc_error_handler)]
 
+mod allocator;
 mod profile;
 mod setup;
+mod syscall;
+mod threads;
 mod timer;
 mod uart;
 
@@ -10,10 +14,14 @@ use core::arch::asm;
 
 use bcm2835_lpa::Peripherals;
 use pi0_register::{Pin, PinFsel};
-use profile::{get_gprof_mut, store_gprof, Gprof};
-use setup::interrupts::{disable_interrupts, enable_interrupts, get_cnt, get_period};
-use timer::{delay_ms, timer_get_usec};
-use uart::{setup_uart, store_uart, uart_borrowed};
+use profile::{store_gprof, Gprof};
+use setup::{
+    interrupts::{enable_interrupts, run_user_code},
+    rpi_reboot,
+};
+use syscall::{syscall_error, syscall_hello};
+use timer::delay_ms;
+use uart::{setup_uart, store_uart};
 
 fn main() {
     let mut peripherals = unsafe { Peripherals::steal() };
@@ -37,27 +45,20 @@ fn main() {
 
     enable_interrupts();
 
-    //**************************************************
-    // loop until we get N interrupts, tracking how many
-    // times we can iterate.
-    let start = timer_get_usec();
+    // MAKE SURE TO TIMER_INIT
+    let start = timer::timer_get_usec();
 
-    //     // Q: what happens if you enable cache?  Why are some parts
-    //     // the same, some change?
-    //     //enable_cache();
     let mut iter = 0;
     let sum = 0;
     let n = 2000;
-    while (unsafe { get_cnt() } < n) {
-        assert!(!unsafe { uart_borrowed() });
-        // let _guard = interrupts::guard::InterruptGuard::new();
-        // Q: if you comment this out?  why do #'s change?
+    while (unsafe { setup::interrupts::get_cnt() } < n) {
+        assert!(!unsafe { uart::uart_borrowed() });
         println!(
             "iter={}: cnt = {}, time between interrupts = {} usec ({:x})",
             iter,
-            unsafe { get_cnt() },
-            unsafe { get_period() },
-            unsafe { get_period() },
+            unsafe { setup::interrupts::get_cnt() },
+            unsafe { setup::interrupts::get_period() },
+            unsafe { setup::interrupts::get_period() },
         );
         iter += 1;
     }
@@ -67,12 +68,12 @@ fn main() {
         sum,
         iter,
         start,
-        timer_get_usec(),
+        timer::timer_get_usec(),
     );
-    disable_interrupts();
+    setup::interrupts::disable_interrupts();
+    unsafe { profile::get_gprof_mut().as_mut().unwrap().gprof_dump() };
 
-    // writeln!("continued interrupts");
-    unsafe { get_gprof_mut().as_mut().unwrap().gprof_dump() };
+    // run_user_code(umain);
 
     println!("FINISHED RSSTART");
     let mut p0 = p0.into_output();
@@ -83,6 +84,26 @@ fn main() {
         set_on = !set_on;
         delay_ms(100);
     }
+
+    rpi_reboot();
+}
+
+extern "C" fn umain() -> ! {
+    println!("REACHED UMAIN");
+    let v = syscall_hello();
+    println!("syscall_hello {}", v);
+    let v = syscall_error();
+    println!("syscall_error {}", v);
+    println!("FINISHED UMAIN");
+    let mut p0 = unsafe { Pin::<0, { PinFsel::Unset }>::forge().into_output() };
+    p0.write(true);
+    let mut set_on = false;
+    for _ in 0..5 {
+        p0.write(set_on);
+        set_on = !set_on;
+        delay_ms(100);
+    }
+    rpi_reboot()
 }
 
 /// Device synchronization barrier
