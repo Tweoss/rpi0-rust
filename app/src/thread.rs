@@ -5,10 +5,7 @@ use core::arch::{asm, global_asm};
 use alloc::vec::Vec;
 use heapless::Deque;
 
-use crate::{
-    dbg, println,
-    setup::interrupts::{disable_interrupts, guard::InterruptGuard},
-};
+use crate::{println, setup::interrupts::guard::InterruptGuard};
 
 // Conclusion: things are pushed in ascending order
 // sp always points one beyond
@@ -43,8 +40,8 @@ thread_trampoline:
     mov r0,#0
     b thread_exit
 
-.globl call_saved_stack
-call_saved_stack:
+.globl call_and_save_stack
+call_and_save_stack:
     push {{r4,r5}}       @ save prev r4,r5 before overwrite
     mov r4,r0            @ take the target pc from r0
     mov r5,lr            @ save link register before calling subroutine
@@ -71,6 +68,35 @@ call_saved_stack:
     ldmia r0,{{r4,r5,r6,r7,r8,r9,r10,r11,r12,sp,lr}}
 
     bx lr                @ return to caller
+
+.globl yield_save_context
+yield_save_context:
+    push {{r4, r5, r6, r7, r8, r9, r10, r11, lr}}
+    mov r4,r0                    @ put target pc in safe register 
+
+    mov r0,sp                    @ save stack pointer after pushes
+    mov r1,pc                    @ grab current pc
+    add r1,r1,#8                @ point to reloading the stack pointer
+
+    @ save sp, pc in current thread's state and move thread to run queue
+    bl thread_yield_save_sp_move_to_queue 
+
+    @ mov r3,sp                    @ save stack pointer after pushes
+    @ bl set_current_stack_pointer
+ 
+    @ mov r3,pc                    @ grab current pc
+    @ add r3,r3,#12                @ point to reloading the stack pointer
+    @ str r3,[r0]                  @ save modified pc to thread struct
+    @ mov r0,r1                    @ push thread struct onto run queue
+    @ bl thread_yield_push_back
+
+    bx r4                        @ yield to logic that handles run queue 
+
+    @ REENTRY HERE
+    bl get_current_stack_pointer @ grab stack pointer from thread struct
+    mov sp,r0                    @ restore stack and all other registers
+    pop {{r4, r5, r6, r7, r8, r9, r10, r11, lr}}
+    bx lr                        @ return to caller
     "#
 );
 
@@ -82,7 +108,6 @@ struct ThreadState {
     current_thread: Option<alloc::boxed::Box<Thread>>,
     counter: u32,
     return_pc: Option<u32>,
-    return_sp: Option<u32>,
     return_register_dump: Option<alloc::boxed::Box<[u32; 11]>>,
 }
 
@@ -91,11 +116,10 @@ static mut THREAD_STATE: ThreadState = ThreadState {
     current_thread: None,
     counter: 0,
     return_pc: None,
-    return_sp: None,
     return_register_dump: None,
 };
 
-struct Thread {
+pub struct Thread {
     id: u32,
     stack: Vec<u32>,
     stack_pointer: usize,
@@ -131,13 +155,14 @@ pub fn start() {
     loop {
         let guard = InterruptGuard::new();
         if let Some(next) = state.queue.pop_front() {
-            println!("running thread {}", next.id);
             let pc = next.program_counter;
-            println!("running next thread with pc {}", pc);
+            println!(
+                "running thread {} with pc {}",
+                next.id, next.program_counter
+            );
             state.current_thread = Some(next);
             drop(guard);
-            unsafe { call_saved_stack(pc as u32) };
-            println!("returned from call_saved_stack");
+            unsafe { call_and_save_stack(pc as u32) };
         } else {
             println!("no more threads to run");
             drop(guard);
@@ -149,20 +174,12 @@ pub fn start() {
 #[allow(static_mut_refs)]
 #[no_mangle]
 pub extern "C" fn get_current_stack_pointer() -> u32 {
-    println!("getting current stack pointer");
     unsafe { THREAD_STATE.current_thread.as_ref().unwrap().stack_pointer as u32 }
-}
-#[allow(static_mut_refs)]
-#[no_mangle]
-pub extern "C" fn set_current_stack_pointer(sp: u32) {
-    println!("setting current stack pointer");
-    unsafe { THREAD_STATE.current_thread.as_mut().unwrap().stack_pointer = sp as usize }
 }
 
 #[allow(static_mut_refs)]
 #[no_mangle]
 pub extern "C" fn set_return_program_counter(pc: u32) {
-    dbg!(pc);
     unsafe { THREAD_STATE.return_pc = Some(pc) }
 }
 #[allow(static_mut_refs)]
@@ -170,7 +187,27 @@ pub extern "C" fn set_return_program_counter(pc: u32) {
 pub extern "C" fn get_register_dump_start_address() -> u32 {
     unsafe { (&mut THREAD_STATE.return_register_dump.as_mut().unwrap()).as_mut_ptr() as u32 }
 }
-
+#[allow(static_mut_refs)]
+#[no_mangle]
+pub extern "C" fn thread_yield_save_sp_move_to_queue(new_sp: u32, new_pc: u32) {
+    let state = unsafe { &mut THREAD_STATE };
+    let mut current_thread = state.current_thread.take().expect("should be in a thread");
+    current_thread.stack_pointer = new_sp as usize;
+    current_thread.program_counter = new_pc as usize;
+    state
+        .queue
+        .push_back(current_thread)
+        .expect("too many threads");
+}
+#[allow(static_mut_refs)]
+#[no_mangle]
+pub extern "C" fn thread_yield_push_back(thread_ptr: usize) {
+    let state = unsafe { &mut THREAD_STATE };
+    state
+        .queue
+        .push_back(unsafe { alloc::boxed::Box::from_raw(thread_ptr as *mut Thread) })
+        .expect("too many threads");
+}
 #[allow(static_mut_refs)]
 pub fn get_return_pc() -> u32 {
     unsafe { THREAD_STATE.return_pc.expect("should have had a return pc") as u32 }
@@ -178,7 +215,8 @@ pub fn get_return_pc() -> u32 {
 
 extern "C" {
     pub fn thread_trampoline();
-    pub fn call_saved_stack(branch_pc: u32) -> u32;
+    pub fn call_and_save_stack(branch_pc: u32) -> u32;
+    pub fn yield_save_context(return_pc: u32);
 }
 
 #[allow(static_mut_refs)]
@@ -207,172 +245,52 @@ pub fn fork(code: extern "C" fn(*mut u32), arg: *mut u32) {
         .queue
         .push_back(alloc::boxed::Box::new(thread))
         .expect("too many threads");
-
-    // TODO: push onto queue
-    // 1. `rpi_fork` should write the address of trampoline
-    //    `rpi_init_trampoline` to the `lr` offset in the newly
-    //     created thread's stack (make sure you understand why!)  and the
-    //     `code` and `arg` to some other register offsets (e.g., `r4` and
-    //     `r5`) --- the exact offsets don't matter.
-
-    // 2. Implement `rpi_init_trampoline` in `rpi-thread-asm.S` so that
-    //    it loads arg` from the stack (from Step 1) into `r0`,
-    //    loads `code` into another register that it then uses to
-    //    do a branch and link.
-
-    // 3. To handle missing `rpi_exit`: add a call to `rpi_exit` at the end
-    //    of `rpi_init_trampoline`.
-
-    // 4. To help debug problems: you can initially have the
-    //    trampoline code you write (`rpi_init_trampoline`) initially just
-    //    call out to C code to print out its values so you can sanity check
-    //    that they make sense.
 }
 
 #[no_mangle]
 pub extern "C" fn thread_exit(_exit_code: i32) -> ! {
     let return_pc = get_return_pc();
-    // dbg!(return_pc);
-    println!("return_pc = {}", return_pc);
     // Jump to start
     unsafe { asm!("bx {}", in(reg) return_pc) };
     unreachable!()
 }
 
-#[allow(static_mut_refs)]
 pub fn thread_yield() {
     // Push self with new modified return address and jump to start
-    unsafe { asm!("push {{r4, r5, r6, r7, r8, r9, r10, r11}}") };
     let return_pc = get_return_pc();
-    let state = unsafe { &mut THREAD_STATE };
-    let mut current_thread = state.current_thread.take().expect("should be in a thread");
     // TODO: should the boxes be pinned?
-    let stored_pc_ptr = ((&mut current_thread.program_counter) as *mut usize) as usize;
-    let current_thread_ptr = alloc::boxed::Box::<Thread>::into_raw(current_thread) as usize;
-
-    #[no_mangle]
-    pub extern "C" fn thread_yield_push_back(thread_ptr: usize) {
-        let state = unsafe { &mut THREAD_STATE };
-        state
-            .queue
-            .push_back(unsafe { alloc::boxed::Box::from_raw(thread_ptr as *mut Thread) })
-            .expect("too many threads");
-    }
-
-    unsafe {
-        asm!(
-            "
-            @ TODO: push current stack pointer
-            mov r0,pc
-            add r0,r0,#20 @ point to getting the stack pointer
-            str r0,[{}]
-            mov r0,{}
-            mov r5,lr
-            bl thread_yield_push_back
-            mov lr,r5
-            bx {}
-            @ TODO: pop current stack pointer
-            pop {{r4, r5, r6, r7, r8, r9, r10, r11}}
-            ",
-            in(reg) stored_pc_ptr,
-            in(reg) current_thread_ptr,
-            in(reg) return_pc
-        )
-    };
+    unsafe { yield_save_context(return_pc) };
 }
 
-// // create a new thread that takes a single argument.
-// typedef void (*rpi_code_t)(void *);
+#[allow(static_mut_refs)]
+pub fn read_current_thread<T>(f: impl FnOnce(&Thread) -> T) -> Option<T> {
+    let state = unsafe { &THREAD_STATE };
+    if let Some(current) = &state.current_thread {
+        Some(f(current))
+    } else {
+        None
+    }
+}
 
-// rpi_thread_t *rpi_fork(rpi_code_t code, void *arg);
+#[allow(unused)]
+pub fn demo() {
+    static mut ARGS: [u32; 3] = [42, 27, 1];
+    extern "C" fn thread(arg: *mut u32) {
+        let id = read_current_thread(|t| t.id).unwrap();
 
-// // exit current thread: switch to the next runnable
-// // thread, or exit the threads package.
-// void rpi_exit(int exitcode);
-
-// // yield the current thread.
-// void rpi_yield(void);
-
-// #define THREAD_MAXSTACK (1024 * 8/4)
-// typedef struct rpi_thread {
-//     // SUGGESTION:
-//     //     check that this is within <stack> (see last field)
-//     //     should never point outside.
-//     uint32_t *saved_sp;
-
-// 	struct rpi_thread *next;
-// 	uint32_t tid;
-
-//     // only used for part1: useful for testing without cswitch
-//     void (*fn)(void *arg);
-//     void *arg;          // this can serve as private data.
-
-//     const char *annot;
-//     // threads waiting on the current one to exit.
-//     // struct rpi_thread *waiters;
-
-// 	uint32_t stack[THREAD_MAXSTACK];
-// } rpi_thread_t;
-//
-// _Static_assert(offsetof(rpi_thread_t, stack) % 8 == 0,
-// "must be 8 byte aligned");
-
-// // statically check that the register save area is at offset 0.
-// _Static_assert(offsetof(rpi_thread_t, saved_sp) == 0,
-// "stack save area must be at offset 0");
-
-// // starts the thread system: only returns when there are
-// // no more runnable threads.
-// void rpi_thread_start(void);
-
-// // get the pointer to the current thread.
-// rpi_thread_t *rpi_cur_thread(void);
-
-// // create a new thread that takes a single argument.
-// typedef void (*rpi_code_t)(void *);
-
-// rpi_thread_t *rpi_fork(rpi_code_t code, void *arg);
-
-// // exit current thread: switch to the next runnable
-// // thread, or exit the threads package.
-// void rpi_exit(int exitcode);
-
-// // yield the current thread.
-// void rpi_yield(void);
-
-// /***************************************************************
-//  * internal routines: we put them here so you don't have to look
-//  * for the prototype.
-//  */
-// // internal routine:
-// //  - save the current register values into <old_save_area>
-// //  - load the values in <new_save_area> into the registers
-// //  reutrn to the caller (which will now be different!)
-// void rpi_cswitch(uint32_t **old_sp_save, const uint32_t *new_sp);
-
-// #if 0
-// // returns the stack pointer (used for checking).
-// const uint8_t *rpi_get_sp(void);
-
-// // check that: the current thread's sp is within its stack.
-// void rpi_stack_check(void);
-
-// // do some internal consistency checks --- used for testing.
-// void rpi_internal_check(void);
-
-// // rpi_thread helpers
-// static inline void *rpi_arg_get(rpi_thread_t *t) {
-//     return t->arg;
-// }
-// static inline void rpi_arg_put(rpi_thread_t *t, void *arg) {
-//     t->arg = arg;
-// }
-// #endif
-// static inline unsigned rpi_tid(void) {
-//     rpi_thread_t *t = rpi_cur_thread();
-//     if(!t)
-//         panic("rpi_threads not running\n");
-//     return t->tid;
-// }
-
-// #endif
+        println!("thread {id} has arg: {}", unsafe { *arg });
+        for i in 0..3 {
+            println!("thread {id} yields {i}");
+            thread_yield();
+        }
+        if id == 1 {
+            println!("forking");
+            fork(thread, &mut unsafe { ARGS }[2]);
+        }
+        println!("thread {id} exits now");
+        thread_exit(1);
+    }
+    fork(thread, &mut unsafe { ARGS }[0]);
+    fork(thread, &mut unsafe { ARGS }[1]);
+    start();
+}

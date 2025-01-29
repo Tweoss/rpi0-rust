@@ -1,6 +1,12 @@
 use core::arch::asm;
 
-use crate::println;
+use pi0_register::{Pin, PinFsel};
+
+use crate::{
+    println,
+    setup::{interrupts::run_user_code, rpi_reboot},
+    timer::delay_ms,
+};
 
 pub fn syscall_vector(pc: u32) -> i32 {
     let instruction = unsafe { *(pc as *const u32) };
@@ -44,4 +50,27 @@ pub fn syscall_error() -> i32 {
         )
     }
     x
+}
+
+extern "C" fn umain() -> ! {
+    println!("REACHED UMAIN");
+    let v = syscall_hello();
+    println!("syscall_hello {}", v);
+    let v = syscall_error();
+    println!("syscall_error {}", v);
+    println!("FINISHED UMAIN\nDONE!!!");
+    let mut p0 = unsafe { Pin::<0, { PinFsel::Unset }>::forge().into_output() };
+    p0.write(true);
+    let mut set_on = false;
+    for _ in 0..5 {
+        p0.write(set_on);
+        set_on = !set_on;
+        delay_ms(100);
+    }
+    rpi_reboot()
+}
+
+#[allow(unused)]
+pub fn demo() {
+    run_user_code(umain);
 }

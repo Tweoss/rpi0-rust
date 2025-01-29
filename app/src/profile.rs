@@ -75,7 +75,8 @@ impl Gprof {
     }
 }
 
-pub fn run() {
+#[allow(unused)]
+pub fn demo() {
     let gprof = unsafe { Gprof::gprof_init() };
     store_gprof(gprof);
 
