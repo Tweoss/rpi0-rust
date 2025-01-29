@@ -76,6 +76,9 @@ impl Gprof {
 }
 
 pub fn run() {
+    let gprof = unsafe { Gprof::gprof_init() };
+    store_gprof(gprof);
+
     // MAKE SURE TO TIMER_INIT
     let start = timer::timer_get_usec();
 

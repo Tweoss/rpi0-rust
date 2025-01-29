@@ -418,7 +418,7 @@ unsafe extern "C" fn interrupt_vector(pc: u32) {
     // than the interrupt subsystem.  so we need
     // a dev_barrier() before.
     dsb();
-    get_gprof_mut().as_mut().unwrap().gprof_inc(pc as usize);
+    // get_gprof_mut().as_mut().unwrap().gprof_inc(pc as usize);
 
     CNT += 1;
 

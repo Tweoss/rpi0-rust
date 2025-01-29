@@ -14,9 +14,9 @@ use core::arch::asm;
 
 use bcm2835_lpa::Peripherals;
 use pi0_register::{Pin, PinFsel};
-use profile::{store_gprof, Gprof};
 use setup::{interrupts::enable_interrupts, rpi_reboot};
 use syscall::{syscall_error, syscall_hello};
+use thread::{thread_exit, thread_yield};
 use timer::delay_ms;
 use uart::{setup_uart, store_uart};
 
@@ -37,15 +37,26 @@ fn main() {
         delay_ms(100);
     }
 
-    let gprof = unsafe { Gprof::gprof_init() };
-    store_gprof(gprof);
-
     enable_interrupts();
 
-    // setup::interrupts::run_user_code(umain);
+    extern "C" fn thread_0(arg: *mut u32) {
+        println!("thread_0 has arg: {}", unsafe { *arg });
+        println!("thread_0 yields now");
+        thread_yield();
+        println!("thread_0 exits now");
+        thread_exit(1);
+    }
+    extern "C" fn thread_1(arg: *mut u32) {
+        println!("thread_1 has arg: {}", unsafe { *arg });
+    }
+    let mut arg = 42;
+    thread::fork(thread_0, &mut arg);
+    thread::start();
+    // fork(umain, arg);
 
     println!("FINISHED RSSTART");
     println!("DONE!!!");
+
     let mut p0 = p0.into_output();
     p0.write(true);
     let mut set_on = false;
