@@ -114,7 +114,7 @@ fn panic(info: &PanicInfo) -> ! {
                 location.column()
             ));
         }
-        let _ = w.write_fmt(format_args!("\n{}\n", info.message()));
+        let _ = w.write_fmt(format_args!("\n{}DONE!!!\n", info.message()));
     }
     if let Ok(mut reference) = unsafe { get_uart_mut_checked() } {
         if let Some(w) = reference.deref_mut() {
