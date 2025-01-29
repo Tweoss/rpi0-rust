@@ -3,7 +3,11 @@ extern crate alloc;
 use alloc::vec::Vec;
 use core::cell::{LazyCell, RefCell, RefMut};
 
-use crate::{print, println, setup::interrupts::guard::InterruptGuard};
+use crate::{
+    print, println, profile,
+    setup::{self, interrupts::guard::InterruptGuard},
+    timer, uart,
+};
 
 extern "C" {
     static mut __code_start__: u8;
@@ -69,4 +73,35 @@ impl Gprof {
 
         println!("Total count: {}", total);
     }
+}
+
+pub fn run() {
+    // MAKE SURE TO TIMER_INIT
+    let start = timer::timer_get_usec();
+
+    let mut iter = 0;
+    let sum = 0;
+
+    let n = 2000;
+    while (unsafe { setup::interrupts::get_cnt() } < n) {
+        assert!(!unsafe { uart::uart_borrowed() });
+        println!(
+            "iter={}: cnt = {}, time between interrupts = {} usec ({:x})",
+            iter,
+            unsafe { setup::interrupts::get_cnt() },
+            unsafe { setup::interrupts::get_period() },
+            unsafe { setup::interrupts::get_period() },
+        );
+        iter += 1;
+    }
+
+    println!(
+        "sum = {}, iter = {}, {}-{}",
+        sum,
+        iter,
+        start,
+        timer::timer_get_usec(),
+    );
+    setup::interrupts::disable_interrupts();
+    unsafe { profile::get_gprof_mut().as_mut().unwrap().gprof_dump() };
 }

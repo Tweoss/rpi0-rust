@@ -6,7 +6,7 @@ mod allocator;
 mod profile;
 mod setup;
 mod syscall;
-mod threads;
+mod thread;
 mod timer;
 mod uart;
 
@@ -15,10 +15,7 @@ use core::arch::asm;
 use bcm2835_lpa::Peripherals;
 use pi0_register::{Pin, PinFsel};
 use profile::{store_gprof, Gprof};
-use setup::{
-    interrupts::{enable_interrupts, run_user_code},
-    rpi_reboot,
-};
+use setup::{interrupts::enable_interrupts, rpi_reboot};
 use syscall::{syscall_error, syscall_hello};
 use timer::delay_ms;
 use uart::{setup_uart, store_uart};
@@ -45,37 +42,10 @@ fn main() {
 
     enable_interrupts();
 
-    // MAKE SURE TO TIMER_INIT
-    let start = timer::timer_get_usec();
-
-    let mut iter = 0;
-    let sum = 0;
-    let n = 2000;
-    while (unsafe { setup::interrupts::get_cnt() } < n) {
-        assert!(!unsafe { uart::uart_borrowed() });
-        println!(
-            "iter={}: cnt = {}, time between interrupts = {} usec ({:x})",
-            iter,
-            unsafe { setup::interrupts::get_cnt() },
-            unsafe { setup::interrupts::get_period() },
-            unsafe { setup::interrupts::get_period() },
-        );
-        iter += 1;
-    }
-
-    println!(
-        "sum = {}, iter = {}, {}-{}",
-        sum,
-        iter,
-        start,
-        timer::timer_get_usec(),
-    );
-    setup::interrupts::disable_interrupts();
-    unsafe { profile::get_gprof_mut().as_mut().unwrap().gprof_dump() };
-
-    // run_user_code(umain);
+    // setup::interrupts::run_user_code(umain);
 
     println!("FINISHED RSSTART");
+    println!("DONE!!!");
     let mut p0 = p0.into_output();
     p0.write(true);
     let mut set_on = false;

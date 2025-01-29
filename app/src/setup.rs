@@ -81,7 +81,7 @@ pub unsafe extern "C" fn rsstart() {
     //     // now setup timer interrupts.
     //     //  - Q: if you change 0x100?
     //     //  - Q: if you change 16?
-    timer_init(1, 0x100);
+    // timer_init(1, 0x100);
     // timer_init(16, 0x10);
     unsafe {
         interrupt_init();

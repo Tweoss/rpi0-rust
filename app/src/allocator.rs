@@ -31,12 +31,8 @@ unsafe impl GlobalAlloc for WrappedBumpAllocator {
     unsafe fn dealloc(&self, _ptr: *mut u8, _layout: alloc::Layout) {}
 }
 
-#[alloc_error_handler]
-fn foo(_: core::alloc::Layout) -> ! {
-    panic!("out of memory")
-    // …
-}
-
 #[no_mangle]
 /// For some reoason this is required when using alloc.
-pub extern "C" fn __aeabi_unwind_cpp_pr0() {}
+pub extern "C" fn __aeabi_unwind_cpp_pr0() {
+    panic!("unwinding")
+}
