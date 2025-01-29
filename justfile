@@ -20,8 +20,9 @@ run-release:
 
 
 profile:
-    arm-none-eabi-objdump -d target/armv6zk-none-eabihf/release/rust > target/armv6zk-none-eabihf/release/rust.dump
-    python3 lookup.py target/armv6zk-none-eabihf/release/rust.dump profile.txt
-    # arm-none-eabi-objdump -d target/armv6zk-none-eabihf/debug/rust > target/armv6zk-none-eabihf/debug/rust.dump
     # copy paste addr:count pairs into profile.txt
+    # 
+    # arm-none-eabi-objdump -d target/armv6zk-none-eabihf/release/rust > target/armv6zk-none-eabihf/release/rust.dump
+    # python3 lookup.py target/armv6zk-none-eabihf/release/rust.dump profile.txt
+    arm-none-eabi-objdump -d target/armv6zk-none-eabihf/debug/rust > target/armv6zk-none-eabihf/debug/rust.dump
     python3 lookup.py target/armv6zk-none-eabihf/debug/rust.dump profile.txt
