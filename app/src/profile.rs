@@ -51,6 +51,7 @@ impl Gprof {
         }
     }
 
+    #[allow(unused)]
     pub fn gprof_inc(&mut self, pc: usize) {
         assert!(pc >= self.pc_start);
         self.buffer[(pc - self.pc_start) / size_of::<usize>()] += 1;

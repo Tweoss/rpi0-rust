@@ -3,7 +3,7 @@ use core::arch::{asm, global_asm};
 use bcm2835_lpa::Peripherals;
 
 use super::USER_MODE;
-use crate::{dsb, println, profile::get_gprof_mut, setup::rpi_reboot, timer::timer_get_usec_raw};
+use crate::{dsb, timer::timer_get_usec_raw};
 
 // registers for ARM interrupt control
 // bcm2835; p112   [starts at 0x2000b200]
@@ -299,6 +299,8 @@ pub mod guard {
     impl Drop for InterruptGuard {
         fn drop(&mut self) {
             if self.was_enabled {
+                // NOTE: for profiling, clearing timer interrupt here could be
+                // useful to avoid biasing towards instructions in enable.
                 enable_interrupts();
             }
         }
@@ -385,7 +387,7 @@ pub unsafe fn get_period() -> u32 {
 
 // called by <interrupt-asm.S> on each interrupt.
 #[no_mangle]
-unsafe extern "C" fn interrupt_vector(pc: u32) {
+unsafe extern "C" fn interrupt_vector(_pc: u32) {
     let peripherals = Peripherals::steal();
     // we don't know what the client code was doing, so
     // start with a device barrier in case it was in
@@ -450,6 +452,7 @@ unsafe extern "C" fn interrupt_vector(pc: u32) {
 // // NOTE: a better interface = specify the timer period.
 // // worth doing as an extension!
 // static
+#[allow(unused)]
 pub unsafe fn timer_init(prescale: u32, ncycles: u32) {
     //**************************************************
     // now that we are sure the global interrupt state is

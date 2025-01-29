@@ -8,7 +8,7 @@ use core::{
 };
 
 use bcm2835_lpa::Peripherals;
-use interrupts::{disable_interrupts, interrupt_init, timer_init};
+use interrupts::{disable_interrupts, interrupt_init};
 use pi0_register::{Pin, PinFsel};
 
 use crate::{
@@ -81,8 +81,8 @@ pub unsafe extern "C" fn rsstart() {
     //     // now setup timer interrupts.
     //     //  - Q: if you change 0x100?
     //     //  - Q: if you change 16?
-    // timer_init(1, 0x100);
-    // timer_init(16, 0x10);
+    // interrupts::timer_init(1, 0x100);
+    // interrupts::timer_init(16, 0x10);
     unsafe {
         interrupt_init();
     }
