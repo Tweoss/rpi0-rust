@@ -1,12 +1,9 @@
 use core::arch::asm;
 
-use pi0_lib::{Pin, PinFsel};
+use crate::setup::rpi_reboot;
+use crate::{Pin, PinFsel};
 
-use crate::{
-    println,
-    setup::{interrupts::run_user_code, rpi_reboot},
-    timer::delay_ms,
-};
+use crate::{interrupts::run_user_code, println, timer::delay_ms};
 
 pub fn syscall_vector(pc: u32) -> i32 {
     let instruction = unsafe { *(pc as *const u32) };
@@ -70,7 +67,6 @@ extern "C" fn umain() -> ! {
     rpi_reboot()
 }
 
-#[allow(unused)]
 pub fn demo() {
     run_user_code(umain);
 }

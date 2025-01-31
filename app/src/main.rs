@@ -2,19 +2,15 @@
 #![no_main] // disable all Rust-level entry points
 #![feature(alloc_error_handler)]
 
-mod allocator;
 mod profile;
 mod setup;
-mod syscall;
 mod thread;
-mod timer;
-mod uart;
-
-use core::arch::asm;
 
 use bcm2835_lpa::Peripherals;
-use pi0_lib::{get_pins, Pin, PinFsel};
-use setup::{interrupts::enable_interrupts, rpi_reboot};
+use pi0_lib::interrupts::enable_interrupts;
+use pi0_lib::setup::rpi_reboot;
+use pi0_lib::{get_pins, println, uart, Pin, PinFsel};
+use pi0_lib::{interrupts, timer};
 use timer::delay_ms;
 use uart::{setup_uart, store_uart};
 
@@ -36,7 +32,7 @@ fn main() {
     }
 
     enable_interrupts();
-    thread::demo();
+    // thread::demo();
     // syscall::demo();
 
     // fork(umain, arg);
@@ -54,14 +50,4 @@ fn main() {
     }
 
     rpi_reboot();
-}
-
-/// Device synchronization barrier
-fn dsb() {
-    unsafe {
-        asm!(
-            "mcr p15, 0, {tmp}, c7, c10, 4",
-            tmp = in(reg) 0,
-        )
-    }
 }

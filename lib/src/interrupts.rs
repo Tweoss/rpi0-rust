@@ -2,7 +2,6 @@ use core::arch::{asm, global_asm};
 
 use bcm2835_lpa::Peripherals;
 
-use super::USER_MODE;
 use crate::{dsb, timer::timer_get_usec_raw};
 
 // registers for ARM interrupt control
@@ -248,7 +247,7 @@ run_user_code_asm:
     @ user main should never return
 "#,
     INT_STACK_ADDR = const INT_STACK_ADDR,
-    USER_MODE = const USER_MODE,
+    USER_MODE = const super::setup::USER_MODE,
 );
 
 mod asm {
@@ -282,7 +281,7 @@ pub fn run_user_code(f: extern "C" fn() -> !) {
 }
 
 pub mod guard {
-    use crate::setup::interrupts::{disable_interrupts, enable_interrupts};
+    use crate::interrupts::{disable_interrupts, enable_interrupts};
 
     pub struct InterruptGuard {
         was_enabled: bool,
@@ -452,7 +451,6 @@ unsafe extern "C" fn interrupt_vector(_pc: u32) {
 // // NOTE: a better interface = specify the timer period.
 // // worth doing as an extension!
 // static
-#[allow(unused)]
 pub unsafe fn timer_init(prescale: u32, ncycles: u32) {
     //**************************************************
     // now that we are sure the global interrupt state is

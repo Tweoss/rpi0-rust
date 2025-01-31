@@ -2,12 +2,9 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use core::cell::{LazyCell, RefCell, RefMut};
+use pi0_lib::{interrupts, print};
 
-use crate::{
-    print, println, profile,
-    setup::{self, interrupts::guard::InterruptGuard},
-    timer, uart,
-};
+use crate::{interrupts::guard::InterruptGuard, println, profile, timer, uart};
 
 extern "C" {
     static mut __code_start__: u8;
@@ -88,14 +85,14 @@ pub fn demo() {
     let sum = 0;
 
     let n = 2000;
-    while (unsafe { setup::interrupts::get_cnt() } < n) {
+    while (unsafe { interrupts::get_cnt() } < n) {
         assert!(!unsafe { uart::uart_borrowed() });
         println!(
             "iter={}: cnt = {}, time between interrupts = {} usec ({:x})",
             iter,
-            unsafe { setup::interrupts::get_cnt() },
-            unsafe { setup::interrupts::get_period() },
-            unsafe { setup::interrupts::get_period() },
+            unsafe { interrupts::get_cnt() },
+            unsafe { interrupts::get_period() },
+            unsafe { interrupts::get_period() },
         );
         iter += 1;
     }
@@ -107,6 +104,6 @@ pub fn demo() {
         start,
         timer::timer_get_usec(),
     );
-    setup::interrupts::disable_interrupts();
+    interrupts::disable_interrupts();
     unsafe { profile::get_gprof_mut().as_mut().unwrap().gprof_dump() };
 }

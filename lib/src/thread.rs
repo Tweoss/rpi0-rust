@@ -5,7 +5,7 @@ use core::arch::{asm, global_asm};
 use alloc::vec::Vec;
 use heapless::Deque;
 
-use crate::{println, setup::interrupts::guard::InterruptGuard};
+use crate::{interrupts::guard::InterruptGuard, println};
 
 // Conclusion: things are pushed in ascending order
 // sp always points one beyond
@@ -272,7 +272,6 @@ pub fn read_current_thread<T>(f: impl FnOnce(&Thread) -> T) -> Option<T> {
     }
 }
 
-#[allow(unused)]
 pub fn demo() {
     static mut ARGS: [u32; 3] = [42, 27, 1];
     extern "C" fn thread(arg: *mut u32) {

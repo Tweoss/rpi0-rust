@@ -3,10 +3,10 @@ use core::{
     cell::{BorrowMutError, LazyCell, RefCell, RefMut},
 };
 
+use crate::{Pin, PinFsel};
 use bcm2835_lpa::{Peripherals, UART1};
-use pi0_lib::{Pin, PinFsel};
 
-use crate::{dsb, setup::interrupts::guard};
+use crate::{dsb, interrupts::guard};
 
 const ASSUMED_CLOCK_RATE: usize = 250_000_000;
 const DESIRED_BAUD_RATE: usize = 115_200;
@@ -84,27 +84,36 @@ pub fn store_uart(writer: UartWriter) {
 
 #[allow(static_mut_refs)]
 pub unsafe fn uart_borrowed() -> bool {
-    LazyCell::force(&crate::uart::UART_WRITER)
+    let guard = guard::InterruptGuard::new();
+    let out = LazyCell::force(&crate::uart::UART_WRITER)
         .try_borrow_mut()
-        .is_err()
+        .is_err();
+    drop(guard);
+    out
 }
 
 /// Panics if UART_WRITER is already borrowed.
 #[allow(static_mut_refs)]
 pub unsafe fn get_uart_mut() -> RefMut<'static, Option<UartWriter>> {
-    LazyCell::force(&crate::uart::UART_WRITER).borrow_mut()
+    let guard = guard::InterruptGuard::new();
+    let out = LazyCell::force(&crate::uart::UART_WRITER).borrow_mut();
+    drop(guard);
+    out
 }
 #[allow(static_mut_refs)]
 pub unsafe fn get_uart_mut_checked() -> Result<RefMut<'static, Option<UartWriter>>, BorrowMutError>
 {
-    LazyCell::force(&crate::uart::UART_WRITER).try_borrow_mut()
+    let guard = guard::InterruptGuard::new();
+    let out = LazyCell::force(&crate::uart::UART_WRITER).try_borrow_mut();
+    drop(guard);
+    out
 }
 
 /// This will error if the args cause an interrupt (like software interrupt).
 #[macro_export]
 macro_rules! dbg {
     ($( $args:expr),* ) => {
-        let guard = crate::setup::interrupts::guard::InterruptGuard::new();
+        let guard = crate::interrupts::guard::InterruptGuard::new();
         if let Some(mut w) = unsafe { $crate::uart::get_uart_mut() }.as_mut() {
             $(
                 core::fmt::Write::write_fmt(&mut w, format_args!("[{}:{}:{}] ", file!(), line!(), column!())).unwrap();
@@ -120,7 +129,7 @@ macro_rules! dbg {
 #[macro_export]
 macro_rules! print {
     ($( $args:tt)* ) => {
-        let guard = crate::setup::interrupts::guard::InterruptGuard::new();
+        let guard = crate::interrupts::guard::InterruptGuard::new();
         if let Some(mut w) = unsafe { $crate::uart::get_uart_mut() }.as_mut() {
             core::fmt::Write::write_fmt(&mut w, format_args!($($args)*)).unwrap();
         }
@@ -132,7 +141,7 @@ macro_rules! print {
 #[macro_export]
 macro_rules! println {
     ($( $args:tt)* ) => {
-        let guard = crate::setup::interrupts::guard::InterruptGuard::new();
+        let guard = crate::interrupts::guard::InterruptGuard::new();
         if let Some(mut w) = unsafe { $crate::uart::get_uart_mut() }.as_mut() {
             core::fmt::Write::write_fmt(&mut w, format_args!($($args)*)).unwrap();
             core::fmt::Write::write_str(&mut w, "\n").unwrap();

@@ -4,10 +4,20 @@
 #![feature(generic_const_exprs)]
 #![feature(unsized_const_params)]
 
+mod allocator;
+pub mod interrupts;
 mod pin_array;
+pub mod setup;
+pub mod syscall;
+pub mod thread;
+pub mod timer;
+pub mod uart;
 pub use pin_array::get_pins;
 
-use core::marker::{ConstParamTy_, UnsizedConstParamTy};
+use core::{
+    arch::asm,
+    marker::{ConstParamTy_, UnsizedConstParamTy},
+};
 
 const PIN_COUNT: usize = 54;
 
@@ -150,6 +160,12 @@ where
     }
 }
 
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+/// Device synchronization barrier
+fn dsb() {
+    unsafe {
+        asm!(
+            "mcr p15, 0, {tmp}, c7, c10, 4",
+            tmp = in(reg) 0,
+        )
+    }
 }
