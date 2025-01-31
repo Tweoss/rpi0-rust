@@ -13,14 +13,14 @@ mod uart;
 use core::arch::asm;
 
 use bcm2835_lpa::Peripherals;
-use pi0_register::{Pin, PinFsel};
+use pi0_lib::{get_pins, Pin, PinFsel};
 use setup::{interrupts::enable_interrupts, rpi_reboot};
 use timer::delay_ms;
 use uart::{setup_uart, store_uart};
 
 fn main() {
     let mut peripherals = unsafe { Peripherals::steal() };
-    let pins = unsafe { pi0_register::get_pins() };
+    let pins = unsafe { get_pins() };
     let (p0, pins): (Pin<0, { PinFsel::Unset }>, _) = pins.pluck();
     let (p14, _pins): (Pin<14, { PinFsel::Unset }>, _) = pins.pluck();
     let w = setup_uart(p14, &mut peripherals);

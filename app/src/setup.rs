@@ -9,7 +9,7 @@ use core::{
 
 use bcm2835_lpa::Peripherals;
 use interrupts::{disable_interrupts, interrupt_init};
-use pi0_register::{Pin, PinFsel};
+use pi0_lib::{Pin, PinFsel};
 
 use crate::{
     main,

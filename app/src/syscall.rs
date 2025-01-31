@@ -1,6 +1,6 @@
 use core::arch::asm;
 
-use pi0_register::{Pin, PinFsel};
+use pi0_lib::{Pin, PinFsel};
 
 use crate::{
     println,

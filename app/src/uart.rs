@@ -4,7 +4,7 @@ use core::{
 };
 
 use bcm2835_lpa::{Peripherals, UART1};
-use pi0_register::{Pin, PinFsel};
+use pi0_lib::{Pin, PinFsel};
 
 use crate::{dsb, setup::interrupts::guard};
 

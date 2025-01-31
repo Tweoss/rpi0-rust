@@ -1,6 +1,6 @@
 [workspace]
 members = [
     "app",
-    "pins",
+    "lib",
 ]
 resolver = "2"
