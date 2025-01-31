@@ -1,31 +1,8 @@
-use core::arch::{asm, global_asm};
+use core::arch::asm;
 
 use pi0_lib::interrupts::interrupt_init;
 
 use crate::main;
-
-global_asm!(r#"
-.section ".text.start"
-.globl _start
-_start:
-    @ force the mode to be SUPER.
-    mov r0,  {}
-    orr r0,r0,#(1<<7)    @ disable interrupts.
-    msr cpsr, r0
-
-    @ prefetch flush
-    mov r1, #0;
-    mcr p15, 0, r1, c7, c5, 4
-
-    mov sp, {}          @ initialize stack pointer
-    mov fp, #0          @ clear frame pointer reg.  don't think needed.
-    bl rsstart          @ we could jump right to rsstart (notmain)
-    @ bl _cstart        @ call our code to do initialization.
-    bl rpi_reboot     @ if they return just reboot.
-
-    @ _interrupt_table_end:   @ end of the table.
-"#
-, const pi0_lib::setup::SUPER_MODE, const pi0_lib::setup::STACK_ADDR);
 
 #[no_mangle]
 pub unsafe extern "C" fn rsstart() {

@@ -1,4 +1,4 @@
-use core::{fmt::Write, ops::DerefMut, panic::PanicInfo};
+use core::{arch::global_asm, fmt::Write, ops::DerefMut, panic::PanicInfo};
 
 use crate::{
     interrupts,
@@ -12,6 +12,29 @@ use interrupts::disable_interrupts;
 pub const SUPER_MODE: u32 = 0b10011;
 pub const USER_MODE: u32 = 0b10000;
 pub const STACK_ADDR: u32 = 0x8000000;
+
+global_asm!(r#"
+.section ".text.start"
+.globl _start
+_start:
+    @ force the mode to be SUPER.
+    mov r0,  {}
+    orr r0,r0,#(1<<7)    @ disable interrupts.
+    msr cpsr, r0
+
+    @ prefetch flush
+    mov r1, #0;
+    mcr p15, 0, r1, c7, c5, 4
+
+    mov sp, {}          @ initialize stack pointer
+    mov fp, #0          @ clear frame pointer reg.  don't think needed.
+    bl rsstart          @ we could jump right to rsstart (notmain)
+    @ bl _cstart        @ call our code to do initialization.
+    bl rpi_reboot     @ if they return just reboot.
+
+    @ _interrupt_table_end:   @ end of the table.
+"#
+, const SUPER_MODE, const STACK_ADDR);
 
 #[no_mangle]
 /// Taken from dawson engler's 140e staff code.
