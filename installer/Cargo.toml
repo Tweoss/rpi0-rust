@@ -1,0 +1,17 @@
+[package]
+name = "installer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+termios = "0.3.3"
+bootloader_shared = { path = "../bootloader_shared" }
+eyre = "0.6.12"
+
+[[bin]]
+name = "install"
+path = "src/main.rs"
+test = false
+doctest = false
+bench = false
+

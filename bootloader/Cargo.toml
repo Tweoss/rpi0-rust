@@ -1,0 +1,18 @@
+[package]
+name = "bootloader"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pi0-lib = { version = "0.1.0", path = "../lib" }
+bcm2835-lpa = "0.4.0"
+lz4_flex = { version = "0.11.3", default-features = false }
+bootloader_shared = { path = "../bootloader_shared" }
+
+[[bin]]
+name = "boot"
+path = "src/main.rs"
+test = false
+doctest = false
+bench = false
+

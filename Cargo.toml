@@ -2,5 +2,8 @@
 members = [
     "app",
     "lib",
+    "bootloader",
+    "bootloader_shared",
+    "installer",
 ]
 resolver = "2"

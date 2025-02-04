@@ -4,7 +4,6 @@
 
 mod profile;
 mod setup;
-mod thread;
 
 use bcm2835_lpa::Peripherals;
 use pi0_lib::interrupts::enable_interrupts;
@@ -18,8 +17,9 @@ fn main() {
     let mut peripherals = unsafe { Peripherals::steal() };
     let pins = unsafe { get_pins() };
     let (p0, pins): (Pin<0, { PinFsel::Unset }>, _) = pins.pluck();
-    let (p14, _pins): (Pin<14, { PinFsel::Unset }>, _) = pins.pluck();
-    let w = setup_uart(p14, &mut peripherals);
+    let (p14, pins): (Pin<14, { PinFsel::Unset }>, _) = pins.pluck();
+    let (p15, _pins): (Pin<15, { PinFsel::Unset }>, _) = pins.pluck();
+    let w = setup_uart(p14, p15, &mut peripherals);
     store_uart(w);
 
     let mut p0 = p0.into_output();
@@ -32,10 +32,6 @@ fn main() {
     }
 
     enable_interrupts();
-    // thread::demo();
-    // syscall::demo();
-
-    // fork(umain, arg);
 
     println!("FINISHED RSSTART");
     println!("DONE!!!");
