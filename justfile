@@ -9,8 +9,6 @@ build profile=default-profile:
     set -euxo pipefail
     path_profile={{ if profile == "dev" { "debug" } else { "release" } }}
     cargo rustc --profile {{profile}} --target armv6zk-none-eabihf.json --package rust -Z build-std="core,compiler_builtins,alloc" -- -C link-arg=-Tlink.x
-    # make sure that the file starts with _start pretty please 
-    arm-none-eabi-objdump -d target/armv6zk-none-eabihf/$path_profile/rust | grep "00008000 <_start>:" 
     arm-none-eabi-objcopy target/armv6zk-none-eabihf/$path_profile/rust -O binary target/armv6zk-none-eabihf/$path_profile/app.bin
 
 run profile=default-profile:
@@ -28,8 +26,6 @@ build-boot profile=default-profile:
     set -euxo pipefail
     path_profile={{ if profile == "dev" { "debug" } else { "release" } }}
     cargo rustc --profile {{profile}} --target armv6zk-none-eabihf.json --package bootloader -Z build-std="core,compiler_builtins,alloc" -- -C link-arg=-Tlink.x
-    # make sure that the file starts with _start pretty please 
-    arm-none-eabi-objdump -d target/armv6zk-none-eabihf/$path_profile/boot | grep "00008000 <_start>:" 
     arm-none-eabi-objcopy target/armv6zk-none-eabihf/$path_profile/boot -O binary target/armv6zk-none-eabihf/$path_profile/boot.bin
 
 copy-boot profile=default-profile:
