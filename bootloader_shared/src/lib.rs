@@ -1,7 +1,10 @@
 #![no_std]
 
 pub const PI_ERROR: u32 = 0x00001111;
-pub const PI_GET_PROG_INFO: u32 = 0xDEADBEEF;
+pub const PI_GET_PROG_INFO: u32 = 0xEEEEFFFF;
+pub const fn is_pi_get_prog_info_byte(b: u8) -> bool {
+    b == 0xEE || b == 0xFF
+}
 pub const PI_GET_CODE: u32 = 0x11112222;
 pub const PI_SUCCESS: u32 = 0x22223333;
 

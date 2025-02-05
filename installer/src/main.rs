@@ -8,8 +8,8 @@ use std::{
 };
 
 use bootloader_shared::{
-    CRC_ALGORITHM, INSTALLER_PROG_INFO, INSTALLER_SUCCESS, PI_GET_CODE, PI_GET_PROG_INFO,
-    PI_SUCCESS,
+    is_pi_get_prog_info_byte, CRC_ALGORITHM, INSTALLER_PROG_INFO, INSTALLER_SUCCESS, PI_GET_CODE,
+    PI_GET_PROG_INFO, PI_SUCCESS,
 };
 use eyre::{ensure, eyre, Context};
 use uart::Uart;
@@ -62,10 +62,29 @@ fn transmit(program: &[u8]) -> Result<(), eyre::Report> {
     uart.put32(program.len() as u32)?;
     uart.put32(checksum)?;
 
-    let mut next = uart.get32()?;
-    while next == PI_GET_PROG_INFO {
-        next = uart.get32()?;
+    // Ignore trailing GET_PROG_INFO bytes.
+    let mut byte = uart.getu8(Duration::from_secs(1))?;
+    let mut trailing_bytes = vec![];
+    while is_pi_get_prog_info_byte(byte) {
+        trailing_bytes.push(byte);
+        byte = uart.getu8(Duration::from_secs(1)).with_context(|| {
+            format!(
+                "clearing prog info bytes: {}",
+                trailing_bytes
+                    .iter()
+                    .map(|b| format!("{:#04x}", b))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+        })?;
     }
+    // Get remaining bytes.
+    let mut next = (byte as u32) << 24;
+    for _ in 1..4 {
+        let byte = uart.getu8(Duration::from_secs(1))?;
+        next = (next >> 8) + ((byte as u32) << 24);
+    }
+
     ensure!(
         next == PI_GET_CODE,
         "expected get code, got {:#010x} but expected {:#010x}",
