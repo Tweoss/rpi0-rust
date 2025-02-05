@@ -1,8 +1,8 @@
 use core::arch::{asm, global_asm};
 use pi0_lib::{
+    cycle_counter,
     interrupts::interrupt_init,
-    setup::rpi_reboot,
-    setup::{STACK_ADDR, SUPER_MODE},
+    setup::{rpi_reboot, STACK_ADDR, SUPER_MODE},
 };
 
 use crate::main;
@@ -54,8 +54,7 @@ pub unsafe extern "C" fn rsstart() -> ! {
         interrupt_init();
     }
 
-    // TODO: cycle count initialization
-    // search for cycle_cnt_init.
+    cycle_counter::init();
 
     main();
     rpi_reboot();

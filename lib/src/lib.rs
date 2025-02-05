@@ -5,6 +5,7 @@
 #![feature(unsized_const_params)]
 
 mod allocator;
+pub mod cycle_counter;
 pub mod interrupts;
 mod pin_array;
 pub mod setup;
@@ -91,6 +92,10 @@ where
                 _ => unreachable!(),
             };
         }
+    }
+
+    pub fn erase(self) -> Pin<I, { PinFsel::Unset }> {
+        Pin::<I, { PinFsel::Unset }> { _hidden: () }
     }
 
     pub fn into_output(self) -> Pin<I, { PinFsel::Output }> {

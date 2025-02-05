@@ -101,7 +101,10 @@ fn transmit(program: &[u8]) -> Result<(), eyre::Report> {
         ));
     }
 
-    println!("matched checksum, sending program");
+    println!(
+        "matched checksum, sending program: {} KB",
+        program.len() / 1_000
+    );
     uart.put_bytes(program)?;
 
     let next = uart.get32()?;
@@ -116,7 +119,8 @@ fn transmit(program: &[u8]) -> Result<(), eyre::Report> {
     println!("successfully loaded, waiting for DONE!!!\n");
 
     let mut last_chars = VecDeque::new();
-    while let Ok(c) = uart.getu8(Duration::from_secs(1)) {
+    loop {
+        let c = uart.getu8(Duration::from_secs(10))?;
         print!("{}", c as char);
         std::io::stdout().flush()?;
         last_chars.push_back(c as char);
@@ -124,9 +128,8 @@ fn transmit(program: &[u8]) -> Result<(), eyre::Report> {
             last_chars.pop_front();
         }
         if last_chars.iter().cloned().eq("DONE!!!".chars()) {
-            return Ok(());
+            break;
         }
     }
-
-    Ok(())
+    return Ok(());
 }

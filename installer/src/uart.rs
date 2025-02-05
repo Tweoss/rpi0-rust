@@ -68,9 +68,14 @@ impl Uart {
         let start = Instant::now();
         while self.file.read(&mut buf)? == 0 {
             if Instant::now().duration_since(start) > timeout {
-                return Err(
-                    std::io::Error::new(ErrorKind::TimedOut, "Timed out getting byte").into(),
-                );
+                return Err(std::io::Error::new(
+                    ErrorKind::TimedOut,
+                    format!(
+                        "Timed out getting byte after {} seconds.",
+                        timeout.as_secs_f32()
+                    ),
+                )
+                .into());
             }
         }
         Ok(buf[0])

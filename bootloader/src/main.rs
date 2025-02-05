@@ -14,7 +14,7 @@ use bootloader_shared::{
 use pi0_lib::{
     setup::{rpi_reboot, STACK_ADDR, SUPER_MODE},
     timer,
-    uart::{read_uart, read_uart_u32_timeout, setup_uart, store_uart, write_uart, write_uart_u32},
+    uart::{read_uart, read_uart_u32_timeout, setup_uart, store_uart, write_uart_u32},
     Pin, PinFsel,
 };
 

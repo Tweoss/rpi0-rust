@@ -18,10 +18,9 @@ pub fn setup_uart(
     peripherals: &mut Peripherals,
 ) -> UartWriter {
     let _guard = guard::InterruptGuard::new();
-    // Set pin 14 to TX. Needs to happen before enabling uart.
+    // Set pin 14 and 15 to alt5. Needs to happen before enabling uart.
     let p14 = p14.into_alt5();
     let p15 = p15.into_alt5();
-    // TODO: UART input
     // Enable uart.
     dsb();
     peripherals
@@ -216,4 +215,62 @@ macro_rules! println {
         }
         drop(guard);
     };
+}
+
+/// Software version of uart.
+pub mod software {
+    use crate::{
+        cycle_counter::{delay, delay_until, read},
+        interrupts::guard,
+        Pin, PinFsel,
+    };
+
+    use super::DESIRED_BAUD_RATE;
+
+    pub struct SWUart {
+        p14: Pin<14, { PinFsel::Output }>,
+    }
+
+    impl SWUart {
+        pub fn setup_output(p14: Pin<14, { PinFsel::Unset }>) -> Self {
+            let _guard = guard::InterruptGuard::new();
+            let mut p14 = p14.into_output();
+            p14.write(true);
+            Self { p14 }
+        }
+
+        pub fn write(&mut self, bytes: &[u8]) {
+            // For a given baud rate, compute how many micro-seconds T you write each bit.
+            // For example, for 115,200, this is: (1000*1000)/115200 = 8.68.
+            // (NOTE: we will use cycles rather than micro-seconds since that is much easier
+            // to make accurate. The A+ runs at 700MHz so that is 700 * 1000 * 1000 cycles
+            // per second or about 6076 cycles per bit.)
+
+            const ASSUMED_CLOCK_RATE: usize = 700_000_000;
+            const MICROS_PER_CYCLE: usize = ASSUMED_CLOCK_RATE / 1_000_000;
+            const CYCLES_PER_BIT: u32 = ((MICROS_PER_CYCLE * 1_000_000) / DESIRED_BAUD_RATE) as u32;
+            let start = read();
+            let mut desired = start;
+            for byte in bytes {
+                self.p14.write(false);
+                desired = desired.wrapping_add(CYCLES_PER_BIT);
+                delay_until(desired);
+                // delay(CYCLES_PER_BIT);
+                let mut v = *byte;
+                for _ in 0..u8::BITS {
+                    self.p14.write((v & 1) == 1);
+                    desired = desired.wrapping_add(CYCLES_PER_BIT);
+                    delay_until(desired);
+                    v = v >> 1;
+                }
+                self.p14.write(true);
+                desired = desired.wrapping_add(CYCLES_PER_BIT);
+                delay_until(desired);
+            }
+        }
+
+        pub fn consume(self) -> Pin<14, { PinFsel::Output }> {
+            self.p14
+        }
+    }
 }
