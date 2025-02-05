@@ -10,40 +10,20 @@ use pi0_lib::interrupts::enable_interrupts;
 use pi0_lib::setup::rpi_reboot;
 use pi0_lib::{get_pins, println, uart, Pin, PinFsel};
 use pi0_lib::{interrupts, timer};
-use timer::delay_ms;
 use uart::{setup_uart, store_uart};
 
 fn main() {
     let mut peripherals = unsafe { Peripherals::steal() };
     let pins = unsafe { get_pins() };
-    let (p0, pins): (Pin<0, { PinFsel::Unset }>, _) = pins.pluck();
     let (p14, pins): (Pin<14, { PinFsel::Unset }>, _) = pins.pluck();
     let (p15, _pins): (Pin<15, { PinFsel::Unset }>, _) = pins.pluck();
     let w = setup_uart(p14, p15, &mut peripherals);
     store_uart(w);
 
-    let mut p0 = p0.into_output();
-    p0.write(true);
-    let mut set_on = false;
-    for _ in 0..5 {
-        p0.write(set_on);
-        set_on = !set_on;
-        delay_ms(100);
-    }
-
     enable_interrupts();
 
     println!("FINISHED RSSTART");
     println!("DONE!!!");
-
-    let mut p0 = p0.into_output();
-    p0.write(true);
-    let mut set_on = false;
-    for _ in 0..5 {
-        p0.write(set_on);
-        set_on = !set_on;
-        delay_ms(100);
-    }
 
     rpi_reboot();
 }

@@ -63,14 +63,6 @@ pub unsafe extern "C" fn rsstart() -> ! {
 
     main();
 
-    let p0 = unsafe { Pin::<0, { PinFsel::Unset }>::forge() };
-    let mut p0 = p0.into_output();
-    p0.write(false);
-    timer::delay_ms(500);
-    p0.write(true);
-    timer::delay_ms(500);
-    p0.write(false);
-
     rpi_reboot();
 }
 
@@ -84,8 +76,6 @@ fn main() {
     );
     store_uart(uart);
 
-    p0.write(true);
-
     if let Err(()) = load() {
         write_uart_u32(PI_ERROR);
         p0.write(false);
@@ -97,17 +87,6 @@ fn main() {
     }
     p0.write(false);
 
-    // TODO: remove these
-    p0.write(false);
-    timer::delay_ms(1000);
-    p0.write(true);
-    timer::delay_ms(1000);
-    p0.write(false);
-    timer::delay_ms(1000);
-    p0.write(true);
-    timer::delay_ms(1000);
-    p0.write(false);
-
     // Jump to the loaded code!
     unsafe { asm!("mov pc,{}", const BASE) };
 }
@@ -115,7 +94,7 @@ fn main() {
 fn load() -> Result<(), ()> {
     // Wait for message indicating transmission while sending program info req.
     loop {
-        write_uart(&u32::to_le_bytes(PI_GET_PROG_INFO));
+        write_uart_u32(PI_GET_PROG_INFO);
         if let Ok(v) = read_uart_u32_timeout(Duration::from_millis(300)) {
             if v != INSTALLER_PROG_INFO {
                 return Err(());

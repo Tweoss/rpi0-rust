@@ -22,6 +22,7 @@ use core::{
 const PIN_COUNT: usize = 54;
 
 #[derive(Default, Clone, Copy)]
+#[allow(unused)]
 enum PinState {
     #[default]
     Unset,
