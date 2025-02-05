@@ -1,0 +1,2 @@
+[build]
+target = ["armv6zk-none-eabihf.json"]
