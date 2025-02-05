@@ -19,18 +19,12 @@ fn main() {
     let (p14, pins): (Pin<14, { PinFsel::Unset }>, _) = pins.pluck();
     let (p15, _pins): (Pin<15, { PinFsel::Unset }>, _) = pins.pluck();
 
-    let mut w = software::SWUart::setup_output(p14);
-    w.write(b"Helloooo\n");
-    w.write(b"how ya doin :)\n");
-
-    // let w = setup_uart(p14, p15, &mut peripherals);
-    // store_uart(w);
-
-    let w = setup_uart(w.consume().erase(), p15, &mut peripherals);
+    let w = setup_uart(p14, p15, &mut peripherals);
     store_uart(w);
+
     enable_interrupts();
 
-    // println!("FINISHED RSSTART");
+    println!("FINISHED RSSTART");
     println!("DONE!!!");
 
     rpi_reboot();

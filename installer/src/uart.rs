@@ -11,7 +11,7 @@ use termios::{
     ECHOE, ICANON, IGNBRK, ISIG, IXANY, IXOFF, IXON, OPOST, PARENB, TCSANOW, VMIN, VTIME,
 };
 
-const SPEED: u64 = 115_200 * 4;
+const SPEED: u64 = 115_200 * 8;
 const TIMEOUT: u8 = 10;
 
 pub struct Uart {
