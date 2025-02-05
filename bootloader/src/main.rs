@@ -40,8 +40,6 @@ _start:
     @ bl _cstart        @ call our code to do initialization.
     bl rpi_reboot     @ if they return just reboot.
 
-    @ _interrupt_table_end:   @ end of the table.
-
 @ give ourselves space to load the bootloaded program
 .space {LOCATION}-0x8024,0
 "#

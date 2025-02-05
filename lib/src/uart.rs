@@ -10,7 +10,7 @@ use bcm2835_lpa::{Peripherals, UART1};
 use crate::{dsb, interrupts::guard};
 
 const ASSUMED_CLOCK_RATE: usize = 250_000_000;
-const DESIRED_BAUD_RATE: usize = 115_200;
+const DESIRED_BAUD_RATE: usize = 115_200 * 4;
 
 pub fn setup_uart(
     p14: Pin<14, { PinFsel::Unset }>,

@@ -131,5 +131,6 @@ fn transmit(program: &[u8]) -> Result<(), eyre::Report> {
             break;
         }
     }
+    println!("");
     return Ok(());
 }
