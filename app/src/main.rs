@@ -8,8 +8,7 @@ mod setup;
 use bcm2835_lpa::Peripherals;
 use pi0_lib::interrupts::enable_interrupts;
 use pi0_lib::setup::rpi_reboot;
-use pi0_lib::uart::software;
-use pi0_lib::{get_pins, println, uart, Pin, PinFsel};
+use pi0_lib::{get_pins, println, syscall, uart, Pin, PinFsel};
 use pi0_lib::{interrupts, timer};
 use uart::{setup_uart, store_uart};
 
@@ -21,6 +20,8 @@ fn main() {
 
     let w = setup_uart(p14, p15, &mut peripherals);
     store_uart(w);
+
+    syscall::demo();
 
     enable_interrupts();
 

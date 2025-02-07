@@ -5,6 +5,7 @@
 #![feature(unsized_const_params)]
 
 mod allocator;
+pub mod caches;
 pub mod cycle_counter;
 pub mod interrupts;
 mod pin_array;
@@ -30,9 +31,6 @@ enum PinState {
     Output(bool),
     Input,
 }
-
-// #[thread_local]
-// static STATE_MOCKUP: RefCell<MockPinArray> = RefCell::new(MockPinArray::default());
 
 pub struct If<const COND: bool>;
 pub const fn valid_pin(n: usize) -> bool {

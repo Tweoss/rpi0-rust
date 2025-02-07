@@ -107,7 +107,9 @@ fast_interrupt_asm:
 
 _reset_asm:                   .word reset_asm
 _undefined_instruction_asm:   .word undefined_instruction_asm
-_software_interrupt_asm:      .word software_interrupt_asm
+@ temporarily use plus1 instead
+@ _software_interrupt_asm:      .word software_interrupt_asm
+_software_interrupt_asm:      .word sys_plus1_handler
 _prefetch_abort_asm:          .word prefetch_abort_asm
 _data_abort_asm:              .word data_abort_asm
 _interrupt_asm:               .word interrupt_asm
@@ -245,6 +247,36 @@ run_user_code_asm:
     @ jump to the program counter in r0
     mov pc, r0
     @ user main should never return
+
+.globl sys_plus1_handler
+sys_plus1_handler:
+    add r0, r0, #1
+    movs pc, lr
+
+.align 5
+.globl _interrupt_table_slow
+_interrupt_table_slow:
+    ldr pc, =reset_asm
+    ldr pc, =undefined_instruction_asm
+    ldr pc, =sys_plus1_handler
+    ldr pc, =prefetch_abort_asm
+    ldr pc, =data_abort_asm
+    ldr pc, =reset_asm
+    ldr pc, =interrupt_asm
+
+.align 5
+.globl _interrupt_table_fast
+_interrupt_table_fast:
+    ldr pc, =reset_asm
+    ldr pc, =undefined_instruction_asm
+    @ since we assume _interrupt_vector is not relocated, we can use a branch
+    @ instead of a trampoline. (branches must be +/- 32MB)
+    b sys_plus1_handler
+    ldr pc, =prefetch_abort_asm
+    ldr pc, =data_abort_asm
+    ldr pc, =reset_asm
+    ldr pc, =interrupt_asm
+
 "#,
     INT_STACK_ADDR = const INT_STACK_ADDR,
     USER_MODE = const super::setup::USER_MODE,
@@ -306,8 +338,7 @@ pub mod guard {
     }
 }
 
-/// one-time initialization of general purpose
-/// interrupt state.
+/// one-time initialization of general purpose interrupt state.
 pub unsafe fn interrupt_init() {
     // printk("about to install interrupt handlers\n");
     //
@@ -351,6 +382,10 @@ extern "C" fn fast_interrupt_vector(pc: u32) {
 const USER_STACK_SIZE: usize = 1024 * 64 * 2;
 static mut USER_STACK: [u32; USER_STACK_SIZE] = [0; USER_STACK_SIZE];
 
+#[no_mangle]
+extern "C" fn fast_syscall_vector(pc: u32) -> i32 {
+    1
+}
 #[no_mangle]
 extern "C" fn syscall_vector(pc: u32) -> i32 {
     crate::syscall::syscall_vector(pc)

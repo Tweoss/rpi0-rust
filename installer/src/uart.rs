@@ -27,7 +27,6 @@ impl Uart {
             .context("missing usb file")?;
         let fd = file.as_raw_fd();
         let mut termios = Termios::from_fd(fd).unwrap();
-        // TODO: this might be invalid value for baud rate
         cfsetspeed(&mut termios, SPEED).unwrap();
         termios.c_iflag &= !IGNBRK; // disable break processing
         termios.c_lflag = 0; // no signaling chars, no echo, no canonical processing

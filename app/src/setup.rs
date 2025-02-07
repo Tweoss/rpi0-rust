@@ -41,8 +41,15 @@ pub unsafe extern "C" fn rsstart() -> ! {
     }
     // Not sure if this is sound.
     // Was unable to observe nonzeroed BSS before, so saw no change.
-    let count = &raw const __bss_end__ as usize - &raw const __bss_start__ as usize;
-    core::ptr::write_bytes(&raw mut __bss_start__, 0, count);
+    let count = (&raw const __bss_end__).byte_offset_from(&raw const __bss_start__);
+
+    for index in 0..count {
+        // Use assembly instead of a slice copy because rust/LLVM believes that
+        // is guaranteed to be undefined => unreachable after.
+        let dest = (&raw mut __bss_start__).byte_offset(index * (size_of::<u32>() as isize));
+        let source = 0_u32;
+        asm!("str {}, [{}]", in(reg) source, in(reg) dest);
+    }
     asm!("");
 
     //     // now setup timer interrupts.
