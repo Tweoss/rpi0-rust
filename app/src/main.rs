@@ -1,6 +1,7 @@
 #![no_std] // don't link the Rust standard library
 #![no_main] // disable all Rust-level entry points
 #![feature(alloc_error_handler)]
+#![allow(asm_sub_register)]
 
 mod profile;
 mod setup;
@@ -8,7 +9,11 @@ mod setup;
 use bcm2835_lpa::Peripherals;
 use pi0_lib::interrupts::enable_interrupts;
 use pi0_lib::setup::rpi_reboot;
-use pi0_lib::{get_pins, println, syscall, uart, Pin, PinFsel};
+use pi0_lib::{
+    get_pins,
+    gpio::{Pin, PinFsel},
+    println, syscall, uart,
+};
 use pi0_lib::{interrupts, timer};
 use uart::{setup_uart, store_uart};
 

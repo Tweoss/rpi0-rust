@@ -383,10 +383,6 @@ const USER_STACK_SIZE: usize = 1024 * 64 * 2;
 static mut USER_STACK: [u32; USER_STACK_SIZE] = [0; USER_STACK_SIZE];
 
 #[no_mangle]
-extern "C" fn fast_syscall_vector(pc: u32) -> i32 {
-    1
-}
-#[no_mangle]
 extern "C" fn syscall_vector(pc: u32) -> i32 {
     crate::syscall::syscall_vector(pc)
 }
@@ -437,16 +433,12 @@ unsafe extern "C" fn interrupt_vector(_pc: u32) {
     // if this isn't true, could be a GPU interrupt
     // (as discussed in Broadcom): just return.
     // [confusing, since we didn't enable!]
-    // if (pending & ARM_TIMER_IRQ) == 0 {
-    //     return;
-    // }
     if !peripherals.LIC.basic_pending().read().timer().bit() {
         return;
     }
 
     // Clear the ARM Timer interrupt:
     // Q: what happens, exactly, if we delete?
-    // peripherals.AUX.irq.
     (ARM_TIMER_IRQ_CLEAR as *mut u32).write_volatile(1);
 
     // note: <staff-src/timer.c:timer_get_usec_raw()>
@@ -475,10 +467,6 @@ unsafe extern "C" fn interrupt_vector(_pc: u32) {
     // bad stuff that can happen with interrupts that
     // we don't need to tempt entropy by getting cute.
     dsb();
-
-    // Q: what happens (&why) if you uncomment the
-    // print statement?
-    // printk("In interrupt handler at time: %d\n", clk);
 }
 
 // // initialize timer interrupts.

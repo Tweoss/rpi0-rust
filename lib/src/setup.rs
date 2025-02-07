@@ -1,11 +1,11 @@
 use core::{fmt::Write, ops::DerefMut, panic::PanicInfo};
 
+use crate::gpio::{Pin, PinFsel};
 use crate::{
     interrupts,
     timer::delay_ms,
     uart::{get_uart_mut_checked, setup_uart, UartWriter},
 };
-use crate::{Pin, PinFsel};
 use bcm2835_lpa::Peripherals;
 use interrupts::disable_interrupts;
 

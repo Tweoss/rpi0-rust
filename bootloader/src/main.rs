@@ -12,10 +12,10 @@ use bootloader_shared::{
     PI_GET_PROG_INFO, PI_SUCCESS,
 };
 use pi0_lib::{
+    gpio::{Pin, PinFsel},
     setup::{rpi_reboot, STACK_ADDR, SUPER_MODE},
     timer,
     uart::{read_uart, read_uart_u32_timeout, setup_uart, store_uart, write_uart_u32},
-    Pin, PinFsel,
 };
 
 const BOOTLOADER_LOCATION: u32 = 0x200000;

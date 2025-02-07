@@ -1,8 +1,10 @@
 use core::arch::asm;
 
-use crate::interrupts::disable_interrupts;
 use crate::setup::rpi_reboot;
-use crate::{caches, cycle_counter, dbg, Pin, PinFsel};
+use crate::{
+    caches, cycle_counter,
+    gpio::{Pin, PinFsel},
+};
 
 use crate::{interrupts::run_user_code, println, timer::delay_ms};
 
@@ -71,8 +73,8 @@ extern "C" fn umain() -> ! {
 }
 
 pub fn demo() {
-    // run_user_code(umain);
     test_interrupt_speed();
+    run_user_code(umain);
 }
 
 /// Use different interrupt vector table locations + branches.

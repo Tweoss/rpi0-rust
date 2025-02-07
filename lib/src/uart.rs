@@ -4,7 +4,10 @@ use core::{
     time::Duration,
 };
 
-use crate::{timer, Pin, PinFsel};
+use crate::{
+    gpio::{Pin, PinFsel},
+    timer,
+};
 use bcm2835_lpa::{Peripherals, UART1};
 
 use crate::{dsb, interrupts::guard};
@@ -220,9 +223,9 @@ macro_rules! println {
 /// Software version of uart.
 pub mod software {
     use crate::{
-        cycle_counter::{delay, delay_until, read},
+        cycle_counter::{delay_until, read},
+        gpio::{Pin, PinFsel},
         interrupts::guard,
-        Pin, PinFsel,
     };
 
     use super::DESIRED_BAUD_RATE;

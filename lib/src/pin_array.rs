@@ -1,6 +1,6 @@
 use frunk::HList;
 
-use crate::{Pin, PinFsel};
+use crate::gpio::{Pin, PinFsel};
 
 // #[macro_export]
 macro_rules! HListType {
