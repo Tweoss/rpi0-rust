@@ -16,6 +16,8 @@ def main():
     f.close()
     f = open(sys.argv[2], "r")
     line = f.readline()
+    line = line.removesuffix(",\n")
+    print(line)
     pairs = [pair.split(":") for pair in line.split(',')]
     mapped = [[int(count), addr, map[int(addr.lstrip("0x"), 16)]] for addr, count in pairs]
     mapped.sort()
