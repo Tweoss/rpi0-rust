@@ -1,10 +1,18 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use core::cell::{LazyCell, RefCell, RefMut};
-use pi0_lib::{interrupts, print};
+use core::{arch::asm, cell::RefCell};
+use critical_section::Mutex;
+use pi0_lib::{
+    dbg,
+    interrupts::{
+        self, interrupts_enabled, register_interrupt_handler, remove_interrupt_handler,
+        timer_clear, timer_initialized,
+    },
+    print,
+};
 
-use crate::{interrupts::guard::InterruptGuard, println, profile, timer, uart};
+use crate::{println, profile, timer};
 
 extern "C" {
     static mut __code_start__: u8;
@@ -15,24 +23,15 @@ extern "C" {
     static mut __bss_end__: u8;
 }
 
-static mut GPROF: LazyCell<RefCell<Option<Gprof>>> = LazyCell::new(|| None.into());
+static GPROF: Mutex<RefCell<Option<Gprof>>> = Mutex::new(RefCell::new(None));
 
 pub struct Gprof {
     buffer: Vec<u32>,
     pc_start: usize,
 }
 
-#[allow(static_mut_refs)]
 pub fn store_gprof(gprof: Gprof) {
-    let guard = InterruptGuard::new();
-    unsafe { GPROF.replace(Some(gprof)) };
-    drop(guard);
-}
-
-/// Panics if already borrowed.
-#[allow(static_mut_refs)]
-pub unsafe fn get_gprof_mut() -> RefMut<'static, Option<Gprof>> {
-    LazyCell::force(&GPROF).borrow_mut()
+    critical_section::with(|cs| GPROF.replace(cs, Some(gprof)));
 }
 
 impl Gprof {
@@ -48,28 +47,38 @@ impl Gprof {
         }
     }
 
-    #[allow(unused)]
-    pub fn gprof_inc(&mut self, pc: usize) {
-        assert!(pc >= self.pc_start);
-        self.buffer[(pc - self.pc_start) / size_of::<usize>()] += 1;
+    pub fn gprof_inc(pc: usize) {
+        critical_section::with(|cs| {
+            let mut gprof = GPROF.borrow_ref_mut(cs);
+            let Some(gprof) = gprof.as_mut() else {
+                return;
+            };
+            assert!(pc >= gprof.pc_start);
+            gprof.buffer[(pc - gprof.pc_start) / size_of::<usize>()] += 1;
+        });
     }
 
-    pub fn gprof_dump(&self) {
-        let _guard = InterruptGuard::new();
-        let total: u32 = self.buffer.iter().sum();
-        println!(
-            "program counts (from {:#08x} to {:#08x})",
-            self.pc_start,
-            self.pc_start + self.buffer.len() * 4
-        );
-        for (i, c) in self.buffer.iter().enumerate() {
-            if *c > 0 {
-                print!("{:#08x}:{c},", self.pc_start + i * size_of::<usize>());
+    pub fn gprof_dump() {
+        critical_section::with(|cs| {
+            let gprof = GPROF.borrow(cs).borrow();
+            let Some(gprof) = gprof.as_ref() else {
+                return;
+            };
+            let total: u32 = gprof.buffer.iter().sum();
+            println!(
+                "program counts (from {:#08x} to {:#08x})",
+                gprof.pc_start,
+                gprof.pc_start + gprof.buffer.len() * 4
+            );
+            for (i, c) in gprof.buffer.iter().enumerate() {
+                if *c > 0 {
+                    print!("{:#08x}:{c},", gprof.pc_start + i * size_of::<usize>());
+                }
             }
-        }
-        println!("");
+            println!("");
 
-        println!("Total count: {}", total);
+            println!("Total count: {}", total);
+        })
     }
 }
 
@@ -77,16 +86,20 @@ impl Gprof {
 pub fn demo() {
     let gprof = unsafe { Gprof::gprof_init() };
     store_gprof(gprof);
+    let handler = register_interrupt_handler(alloc::boxed::Box::new(|pc| {
+        Gprof::gprof_inc(pc as usize);
+    }));
 
-    // MAKE SURE TO TIMER_INIT
+    assert!(interrupts_enabled(), "need interrupts to run gprof");
+    assert!(timer_initialized(), "need timer to run gprof");
     let start = timer::timer_get_usec();
 
     let mut iter = 0;
     let sum = 0;
 
-    let n = 2000;
+    let n = 10;
     while (unsafe { interrupts::get_cnt() } < n) {
-        assert!(!unsafe { uart::uart_borrowed() });
+        fib(0x20);
         println!(
             "iter={}: cnt = {}, time between interrupts = {} usec ({:x})",
             iter,
@@ -96,6 +109,7 @@ pub fn demo() {
         );
         iter += 1;
     }
+    remove_interrupt_handler(handler);
 
     println!(
         "sum = {}, iter = {}, {}-{}",
@@ -105,5 +119,13 @@ pub fn demo() {
         timer::timer_get_usec(),
     );
     interrupts::disable_interrupts();
-    unsafe { profile::get_gprof_mut().as_mut().unwrap().gprof_dump() };
+    profile::Gprof::gprof_dump();
+}
+
+fn fib(n: u32) -> u32 {
+    match n {
+        0 => 1,
+        1 => 1,
+        n => fib(n - 1) + fib(n - 2),
+    }
 }

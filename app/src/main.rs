@@ -26,9 +26,10 @@ fn main() {
     let w = setup_uart(p14, p15, &mut peripherals);
     store_uart(w);
 
-    syscall::demo();
+    // syscall::demo();
 
     enable_interrupts();
+    profile::demo();
 
     println!("FINISHED RSSTART");
     println!("DONE!!!");

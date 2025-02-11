@@ -51,6 +51,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19d374276b40fb8bbdee95aef7c7fa6b5316ec764510eb64b8dd0e2ed0d7e7f5"
 
 [[package]]
+name = "critical-section"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "790eea4361631c5e7d22598ecd5723ff611904e3344ce8720784c93e3d83d40b"
+
+[[package]]
 name = "eyre"
 version = "0.6.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -156,6 +162,7 @@ name = "pi0-lib"
 version = "0.1.0"
 dependencies = [
  "bcm2835-lpa",
+ "critical-section",
  "frunk",
  "heapless",
 ]
@@ -198,6 +205,7 @@ name = "rust"
 version = "0.1.0"
 dependencies = [
  "bcm2835-lpa",
+ "critical-section",
  "heapless",
  "pi0-lib",
 ]

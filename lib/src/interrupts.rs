@@ -1,8 +1,13 @@
-use core::arch::{asm, global_asm};
+use core::{
+    arch::{asm, global_asm},
+    cell::RefCell,
+};
 
+use alloc::{boxed::Box, vec::Vec};
 use bcm2835_lpa::Peripherals;
+use critical_section::Mutex;
 
-use crate::{dsb, timer::timer_get_usec_raw};
+use crate::{dsb, println, timer::timer_get_usec_raw};
 
 // registers for ARM interrupt control
 // bcm2835; p112   [starts at 0x2000b200]
@@ -62,7 +67,11 @@ global_asm!(
 enable_interrupts:
     mrs r0,cpsr         @ move cpsr to r1
     bic r1,r0,#(1<<7)	@ clear 7th bit.
+    @ TODO: check if can race the value of r0 if
+    @ interrupted right here. some stack overflow answers
+    @ suggest my solution but don't say if it can race
     msr cpsr_c,r1		@ move r1 back to PSR
+    @ return whether or not interrupts were enabled
     lsr r0,r0,#7
     and r0,r0,#1
     bx lr		        @ return.
@@ -73,6 +82,14 @@ disable_interrupts:
     mrs r0,cpsr		       
     orr r1,r0,#(1<<7)	@ set 7th bit
     msr cpsr_c,r1
+    lsr r0,r0,#7
+    and r0,r0,#1
+    bx lr
+
+@ disable them. returns whether or not they were previously enabled
+.globl interrupts_enabled
+interrupts_enabled:
+    mrs r0,cpsr		       
     lsr r0,r0,#7
     and r0,r0,#1
     bx lr
@@ -288,6 +305,8 @@ mod asm {
         pub fn enable_interrupts() -> u32;
         /// Returns 0 if previously enabled, 0 else.
         pub fn disable_interrupts() -> u32;
+        /// Returns 0 if previously enabled, 0 else.
+        pub fn interrupts_enabled() -> u32;
         pub fn run_user_code_asm(f: extern "C" fn() -> !, sp: *const u32) -> !;
     }
 }
@@ -302,6 +321,11 @@ pub fn enable_interrupts() -> bool {
 pub fn disable_interrupts() -> bool {
     unsafe { asm::disable_interrupts() == 0 }
 }
+/// Returns true if the interrupts were previously enabled, and false if they
+/// were previously disabled.
+pub fn interrupts_enabled() -> bool {
+    unsafe { asm::interrupts_enabled() == 0 }
+}
 
 #[allow(static_mut_refs)]
 pub fn run_user_code(f: extern "C" fn() -> !) {
@@ -310,32 +334,6 @@ pub fn run_user_code(f: extern "C" fn() -> !) {
     assert!(!stack.is_null());
     assert!(stack.is_aligned());
     unsafe { asm::run_user_code_asm(f, stack) }
-}
-
-pub mod guard {
-    use crate::interrupts::{disable_interrupts, enable_interrupts};
-
-    pub struct InterruptGuard {
-        was_enabled: bool,
-    }
-
-    impl InterruptGuard {
-        pub fn new() -> Self {
-            Self {
-                was_enabled: disable_interrupts(),
-            }
-        }
-    }
-
-    impl Drop for InterruptGuard {
-        fn drop(&mut self) {
-            if self.was_enabled {
-                // NOTE: for profiling, clearing timer interrupt here could be
-                // useful to avoid biasing towards instructions in enable.
-                enable_interrupts();
-            }
-        }
-    }
 }
 
 /// one-time initialization of general purpose interrupt state.
@@ -415,15 +413,22 @@ pub unsafe fn get_period() -> u32 {
     unsafe { PERIOD }
 }
 
+static INTERRUPT_HANDLERS: Mutex<RefCell<Vec<Option<Box<dyn FnMut(u32) + Send + Sync>>>>> =
+    Mutex::new(RefCell::new(alloc::vec![]));
+static UNUSED_HANDLER_SLOTS: Mutex<RefCell<Vec<usize>>> = Mutex::new(RefCell::new(alloc::vec![]));
+
 // called by <interrupt-asm.S> on each interrupt.
 #[no_mangle]
-unsafe extern "C" fn interrupt_vector(_pc: u32) {
+unsafe extern "C" fn interrupt_vector(pc: u32) {
     let peripherals = Peripherals::steal();
     // we don't know what the client code was doing, so
     // start with a device barrier in case it was in
     // the middle of using a device (slow: you can
     // do tricks to remove this.)
     dsb();
+    // Safe because we are inside an interrupt, which means the hardware disabled
+    // interrupts for us.
+    let cs = unsafe { critical_section::CriticalSection::new() };
 
     // get the interrupt source: typically if you have
     // one interrupt enabled, you'll have > 1, so have
@@ -436,6 +441,7 @@ unsafe extern "C" fn interrupt_vector(_pc: u32) {
     if !peripherals.LIC.basic_pending().read().timer().bit() {
         return;
     }
+    // TODO: move timer handling into handler.
 
     // Clear the ARM Timer interrupt:
     // Q: what happens, exactly, if we delete?
@@ -446,7 +452,12 @@ unsafe extern "C" fn interrupt_vector(_pc: u32) {
     // than the interrupt subsystem.  so we need
     // a dev_barrier() before.
     dsb();
-    // get_gprof_mut().as_mut().unwrap().gprof_inc(pc as usize);
+
+    println!("running handler {}", CNT);
+    for handler in INTERRUPT_HANDLERS.borrow_ref_mut(cs).iter_mut() {
+        let Some(handler) = handler else { continue };
+        handler(pc);
+    }
 
     CNT += 1;
 
@@ -466,7 +477,12 @@ unsafe extern "C" fn interrupt_vector(_pc: u32) {
     // moment we live in simplicity: there's enough
     // bad stuff that can happen with interrupts that
     // we don't need to tempt entropy by getting cute.
+    (ARM_TIMER_IRQ_CLEAR as *mut u32).write_volatile(1);
     dsb();
+}
+
+pub fn timer_clear() {
+    unsafe { (ARM_TIMER_IRQ_CLEAR as *mut u32).write_volatile(1) };
 }
 
 // // initialize timer interrupts.
@@ -523,4 +539,32 @@ pub unsafe fn timer_init(prescale: u32, ncycles: u32) {
     // done modifying timer: do a dev barrier since
     // we don't know what device gets used next.
     dsb();
+}
+
+pub fn timer_initialized() -> bool {
+    (unsafe { (IRQ_ENABLE_BASIC as *mut u32).read_volatile() } & ARM_TIMER_IRQ) != 0
+}
+
+/// Returns an index to remove the handler.
+pub fn register_interrupt_handler(handler: Box<impl Fn(u32) + Sync + Send + 'static>) -> usize {
+    critical_section::with(|cs| {
+        let mut handlers = INTERRUPT_HANDLERS.borrow_ref_mut(cs);
+        if let Some(index) = UNUSED_HANDLER_SLOTS.borrow_ref_mut(cs).pop() {
+            assert!(handlers[index].is_none());
+            handlers[index] = Some(handler);
+            return index;
+        }
+        let index = handlers.len();
+        handlers.push(Some(handler));
+        index
+    })
+}
+
+/// Returns an index to remove the handler.
+pub fn remove_interrupt_handler(index: usize) {
+    critical_section::with(|cs| {
+        let mut handlers = INTERRUPT_HANDLERS.borrow_ref_mut(cs);
+        handlers[index] = None;
+        UNUSED_HANDLER_SLOTS.borrow_ref_mut(cs).push(index);
+    })
 }

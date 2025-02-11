@@ -1,10 +1,11 @@
 use core::{fmt::Write, ops::DerefMut, panic::PanicInfo};
 
 use crate::gpio::{Pin, PinFsel};
+use crate::uart::UART_WRITER;
 use crate::{
     interrupts,
     timer::delay_ms,
-    uart::{get_uart_mut_checked, setup_uart, UartWriter},
+    uart::{setup_uart, UartWriter},
 };
 use bcm2835_lpa::Peripherals;
 use interrupts::disable_interrupts;
@@ -54,14 +55,18 @@ fn panic(info: &PanicInfo) -> ! {
                 location.column()
             ));
         }
-        let _ = w.write_fmt(format_args!("\n{}DONE!!!\n", info.message()));
+        let _ = w.write_fmt(format_args!("\n{}\nDONE!!!\n", info.message()));
     }
-    if let Ok(mut reference) = unsafe { get_uart_mut_checked() } {
-        if let Some(w) = reference.deref_mut() {
-            write_panic(w, info);
-            rpi_reboot();
-        }
-    }
+    critical_section::with(|cs| {
+        let Ok(mut w) = UART_WRITER.borrow(cs).try_borrow_mut() else {
+            return;
+        };
+        let Some(w) = w.as_mut() else {
+            return;
+        };
+        write_panic(w, info);
+        rpi_reboot();
+    });
     write_panic(&mut construct_uart(), info);
     rpi_reboot();
 }

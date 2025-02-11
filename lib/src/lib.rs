@@ -7,6 +7,7 @@
 
 mod allocator;
 pub mod caches;
+mod critical_section;
 pub mod cycle_counter;
 pub mod gpio;
 pub mod interrupts;
@@ -17,6 +18,8 @@ pub mod thread;
 pub mod timer;
 pub mod uart;
 pub use pin_array::get_pins;
+
+extern crate alloc;
 
 use core::arch::asm;
 

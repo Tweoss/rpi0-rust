@@ -1,11 +1,15 @@
 extern crate alloc;
 
-use core::arch::{asm, global_asm};
+use core::{
+    arch::{asm, global_asm},
+    cell::RefCell,
+};
 
 use alloc::vec::Vec;
+use critical_section::Mutex;
 use heapless::Deque;
 
-use crate::{interrupts::guard::InterruptGuard, println};
+use crate::println;
 
 // Conclusion: things are pushed in ascending order
 // sp always points one beyond
@@ -111,13 +115,13 @@ struct ThreadState {
     return_register_dump: Option<alloc::boxed::Box<[u32; 11]>>,
 }
 
-static mut THREAD_STATE: ThreadState = ThreadState {
+static THREAD_STATE: Mutex<RefCell<ThreadState>> = Mutex::new(RefCell::new(ThreadState {
     queue: Deque::new(),
     current_thread: None,
     counter: 0,
     return_pc: None,
     return_register_dump: None,
-};
+}));
 
 pub struct Thread {
     id: u32,
@@ -145,72 +149,80 @@ impl core::fmt::Debug for Thread {
 }
 
 /// Initializes thread system.
-#[allow(static_mut_refs)]
 pub fn start() {
-    // TODO: have disable interrupts somehow return a mutable reference to all
-    // static variables and have enable_interrupts take back the references?
-    let state = unsafe { &mut THREAD_STATE };
-    state.return_register_dump = Some(alloc::boxed::Box::new([0; 11]));
+    critical_section::with(|cs| {
+        THREAD_STATE.borrow_ref_mut(cs).return_register_dump =
+            Some(alloc::boxed::Box::new([0; 11]));
+    });
 
     loop {
-        let guard = InterruptGuard::new();
-        if let Some(next) = state.queue.pop_front() {
+        let next = critical_section::with(|cs| THREAD_STATE.borrow_ref_mut(cs).queue.pop_front());
+        if let Some(next) = next {
             let pc = next.program_counter;
             println!(
                 "running thread {} with pc {}",
                 next.id, next.program_counter
             );
-            state.current_thread = Some(next);
-            drop(guard);
+
+            critical_section::with(|cs| {
+                THREAD_STATE.borrow_ref_mut(cs).current_thread = Some(next)
+            });
+            // TODO: is this safe to have jumping into thread code outside of critical section?
+            //       is it even safe to have interrupts enabled while in thread code (probably safe)?
             unsafe { call_and_save_stack(pc as u32) };
         } else {
             println!("no more threads to run");
-            drop(guard);
             break;
         }
     }
 }
 
-#[allow(static_mut_refs)]
 #[no_mangle]
 pub extern "C" fn get_current_stack_pointer() -> u32 {
-    unsafe { THREAD_STATE.current_thread.as_ref().unwrap().stack_pointer as u32 }
+    critical_section::with(|cs| {
+        THREAD_STATE
+            .borrow_ref(cs)
+            .current_thread
+            .as_ref()
+            .unwrap()
+            .stack_pointer as u32
+    })
 }
 
-#[allow(static_mut_refs)]
 #[no_mangle]
 pub extern "C" fn set_return_program_counter(pc: u32) {
-    unsafe { THREAD_STATE.return_pc = Some(pc) }
+    critical_section::with(|cs| THREAD_STATE.borrow_ref_mut(cs).return_pc = Some(pc))
 }
-#[allow(static_mut_refs)]
 #[no_mangle]
 pub extern "C" fn get_register_dump_start_address() -> u32 {
-    unsafe { (&mut THREAD_STATE.return_register_dump.as_mut().unwrap()).as_mut_ptr() as u32 }
+    critical_section::with(|cs| {
+        THREAD_STATE
+            .borrow_ref_mut(cs)
+            .return_register_dump
+            .as_mut()
+            .unwrap()
+            .as_mut_ptr() as u32
+    })
 }
-#[allow(static_mut_refs)]
 #[no_mangle]
 pub extern "C" fn thread_yield_save_sp_move_to_queue(new_sp: u32, new_pc: u32) {
-    let state = unsafe { &mut THREAD_STATE };
-    let mut current_thread = state.current_thread.take().expect("should be in a thread");
-    current_thread.stack_pointer = new_sp as usize;
-    current_thread.program_counter = new_pc as usize;
-    state
-        .queue
-        .push_back(current_thread)
-        .expect("too many threads");
+    critical_section::with(|cs| {
+        let mut ts = THREAD_STATE.borrow_ref_mut(cs);
+        let mut current_thread = ts.current_thread.take().expect("should be in a thread");
+        current_thread.stack_pointer = new_sp as usize;
+        current_thread.program_counter = new_pc as usize;
+        ts.queue
+            .push_back(current_thread)
+            .expect("too many threads");
+    });
 }
-#[allow(static_mut_refs)]
-#[no_mangle]
-pub extern "C" fn thread_yield_push_back(thread_ptr: usize) {
-    let state = unsafe { &mut THREAD_STATE };
-    state
-        .queue
-        .push_back(unsafe { alloc::boxed::Box::from_raw(thread_ptr as *mut Thread) })
-        .expect("too many threads");
-}
-#[allow(static_mut_refs)]
 pub fn get_return_pc() -> u32 {
-    unsafe { THREAD_STATE.return_pc.expect("should have had a return pc") as u32 }
+    critical_section::with(|cs| {
+        THREAD_STATE
+            .borrow_ref(cs)
+            .return_pc
+            .expect("should have had a return pc") as u32
+    })
 }
 
 extern "C" {
@@ -219,7 +231,6 @@ extern "C" {
     pub fn yield_save_context(return_pc: u32);
 }
 
-#[allow(static_mut_refs)]
 pub fn fork(code: extern "C" fn(*mut u32), arg: *mut u32) {
     let mut stack = Vec::new();
     stack.resize(THREAD_MAX_STACK, 0);
@@ -228,23 +239,26 @@ pub fn fork(code: extern "C" fn(*mut u32), arg: *mut u32) {
     let len = stack.len();
     stack[len - 1] = code as u32;
     stack[len - 2] = arg as u32;
-    let state = unsafe { &mut THREAD_STATE };
-    let id = state.counter;
-    state.counter += 1;
-    // After two pushes, stack_pointer will point at the lowest filled position.
-    let stack_position = (&stack[len - 2]) as *const u32;
 
-    let thread = Thread {
-        id,
-        stack,
-        stack_pointer: stack_position as usize,
-        program_counter: thread_trampoline as usize,
-    };
+    critical_section::with(|cs| {
+        let mut state = THREAD_STATE.borrow_ref_mut(cs);
+        let id = state.counter;
+        state.counter += 1;
+        // After two pushes, stack_pointer will point at the lowest filled position.
+        let stack_position = (&stack[len - 2]) as *const u32;
 
-    state
-        .queue
-        .push_back(alloc::boxed::Box::new(thread))
-        .expect("too many threads");
+        let thread = Thread {
+            id,
+            stack,
+            stack_pointer: stack_position as usize,
+            program_counter: thread_trampoline as usize,
+        };
+
+        state
+            .queue
+            .push_back(alloc::boxed::Box::new(thread))
+            .expect("too many threads");
+    })
 }
 
 #[no_mangle]
@@ -264,12 +278,13 @@ pub fn thread_yield() {
 
 #[allow(static_mut_refs)]
 pub fn read_current_thread<T>(f: impl FnOnce(&Thread) -> T) -> Option<T> {
-    let state = unsafe { &THREAD_STATE };
-    if let Some(current) = &state.current_thread {
-        Some(f(current))
-    } else {
-        None
-    }
+    critical_section::with(|cs| {
+        THREAD_STATE
+            .borrow_ref(cs)
+            .current_thread
+            .as_ref()
+            .map(|t| f(&t))
+    })
 }
 
 pub fn demo() {
