@@ -5,7 +5,7 @@ use core::{
 
 use alloc::{boxed::Box, vec::Vec};
 use bcm2835_lpa::Peripherals;
-use critical_section::Mutex;
+use critical_section::{CriticalSection, Mutex};
 
 use crate::{dsb, gpio::Pin, println, timer::timer_get_usec_raw};
 
@@ -413,7 +413,9 @@ pub unsafe fn get_period() -> u32 {
     unsafe { PERIOD }
 }
 
-static INTERRUPT_HANDLERS: Mutex<RefCell<Vec<Option<Box<dyn FnMut(u32) + Send + Sync>>>>> =
+type InterruptHandler = Box<dyn FnMut(CriticalSection, u32) + Send + Sync>;
+
+static INTERRUPT_HANDLERS: Mutex<RefCell<Vec<Option<InterruptHandler>>>> =
     Mutex::new(RefCell::new(alloc::vec![]));
 static UNUSED_HANDLER_SLOTS: Mutex<RefCell<Vec<usize>>> = Mutex::new(RefCell::new(alloc::vec![]));
 
@@ -429,11 +431,10 @@ unsafe extern "C" fn interrupt_vector(pc: u32) {
     // Safe because we are inside an interrupt, which means the hardware disabled
     // interrupts for us.
     let cs = unsafe { critical_section::CriticalSection::new() };
-    println!("got interrupt");
 
     for handler in INTERRUPT_HANDLERS.borrow_ref_mut(cs).iter_mut() {
         let Some(handler) = handler else { continue };
-        handler(pc);
+        handler(cs, pc);
     }
 
     // get the interrupt source: typically if you have
@@ -562,7 +563,7 @@ pub unsafe fn gpio_interrupts_init() {
 }
 
 /// Returns an index to remove the handler.
-pub fn register_interrupt_handler(handler: Box<impl Fn(u32) + Sync + Send + 'static>) -> usize {
+pub fn register_interrupt_handler(handler: InterruptHandler) -> usize {
     critical_section::with(|cs| {
         let mut handlers = INTERRUPT_HANDLERS.borrow_ref_mut(cs);
         if let Some(index) = UNUSED_HANDLER_SLOTS.borrow_ref_mut(cs).pop() {

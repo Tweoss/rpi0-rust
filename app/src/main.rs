@@ -8,18 +8,24 @@ extern crate alloc;
 mod profile;
 mod setup;
 
+use core::borrow::BorrowMut;
+use core::cell::RefCell;
+
 use alloc::boxed::Box;
 use bcm2835_lpa::Peripherals;
+use critical_section::Mutex;
 use pi0_lib::interrupts::{enable_interrupts, gpio_interrupts_init, register_interrupt_handler};
 use pi0_lib::setup::rpi_reboot;
 use pi0_lib::timer::delay_ms;
-use pi0_lib::{dbg, interrupts, timer};
+use pi0_lib::{cycle_counter, dbg, interrupts, timer};
 use pi0_lib::{
     get_pins,
     gpio::{Pin, PinFsel},
     println, uart,
 };
 use uart::{setup_uart, store_uart};
+
+static LAST_CYCLE_COUNT: Mutex<RefCell<u32>> = Mutex::new(RefCell::new(0));
 
 fn main() {
     let mut peripherals = unsafe { Peripherals::steal() };
@@ -37,9 +43,12 @@ fn main() {
     let p13 = p13.into_input();
     p13.set_rising_detection(true);
     p13.set_falling_detection(true);
-    register_interrupt_handler(Box::new(move |_| {
+    register_interrupt_handler(Box::new(move |cs, _| {
         if p13.event_detected() {
-            dbg!("got p13 event", p13.read());
+            let mut last = LAST_CYCLE_COUNT.borrow_ref_mut(cs);
+            let current = cycle_counter::read();
+            println!("{}", current - *last);
+            *last = current;
             p13.clear_event();
         }
     }));
@@ -48,8 +57,12 @@ fn main() {
 
     let mut bit = false;
     for i in 0..10 {
-        println!("running {i}");
         delay_ms(400);
+        println!("running {i} at cycle {}", cycle_counter::read());
+
+        critical_section::with(|cs| {
+            LAST_CYCLE_COUNT.replace(cs, cycle_counter::read());
+        });
         p12.write(!bit);
         bit = !bit;
     }

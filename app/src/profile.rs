@@ -86,7 +86,7 @@ impl Gprof {
 pub fn demo() {
     let gprof = unsafe { Gprof::gprof_init() };
     store_gprof(gprof);
-    let handler = register_interrupt_handler(alloc::boxed::Box::new(|pc| {
+    let handler = register_interrupt_handler(alloc::boxed::Box::new(|_, pc| {
         Gprof::gprof_inc(pc as usize);
     }));
 
