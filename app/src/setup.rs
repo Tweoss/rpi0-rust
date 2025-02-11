@@ -1,7 +1,7 @@
 use core::arch::{asm, global_asm};
 use pi0_lib::{
     cycle_counter,
-    interrupts::{self, interrupt_init, timer_initialized},
+    interrupts::{self, gpio_interrupts_init, interrupt_init, timer_initialized},
     setup::{rpi_reboot, STACK_ADDR, SUPER_MODE},
 };
 
@@ -51,6 +51,7 @@ pub unsafe extern "C" fn rsstart() -> ! {
         asm!("str {}, [{}]", in(reg) source, in(reg) dest);
     }
     asm!("");
+    interrupt_init();
 
     //     // now setup timer interrupts.
     //     //  - Q: if you change 0x100?
@@ -59,9 +60,7 @@ pub unsafe extern "C" fn rsstart() -> ! {
     // interrupts::timer_init(1, 0x100);
     interrupts::timer_init(16, 0x1000);
     assert!(timer_initialized());
-    unsafe {
-        interrupt_init();
-    }
+    gpio_interrupts_init();
 
     cycle_counter::init();
 

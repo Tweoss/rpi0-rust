@@ -7,7 +7,7 @@ use alloc::{boxed::Box, vec::Vec};
 use bcm2835_lpa::Peripherals;
 use critical_section::Mutex;
 
-use crate::{dsb, println, timer::timer_get_usec_raw};
+use crate::{dsb, gpio::Pin, println, timer::timer_get_usec_raw};
 
 // registers for ARM interrupt control
 // bcm2835; p112   [starts at 0x2000b200]
@@ -429,6 +429,12 @@ unsafe extern "C" fn interrupt_vector(pc: u32) {
     // Safe because we are inside an interrupt, which means the hardware disabled
     // interrupts for us.
     let cs = unsafe { critical_section::CriticalSection::new() };
+    println!("got interrupt");
+
+    for handler in INTERRUPT_HANDLERS.borrow_ref_mut(cs).iter_mut() {
+        let Some(handler) = handler else { continue };
+        handler(pc);
+    }
 
     // get the interrupt source: typically if you have
     // one interrupt enabled, you'll have > 1, so have
@@ -452,12 +458,6 @@ unsafe extern "C" fn interrupt_vector(pc: u32) {
     // than the interrupt subsystem.  so we need
     // a dev_barrier() before.
     dsb();
-
-    println!("running handler {}", CNT);
-    for handler in INTERRUPT_HANDLERS.borrow_ref_mut(cs).iter_mut() {
-        let Some(handler) = handler else { continue };
-        handler(pc);
-    }
 
     CNT += 1;
 
@@ -543,6 +543,22 @@ pub unsafe fn timer_init(prescale: u32, ncycles: u32) {
 
 pub fn timer_initialized() -> bool {
     (unsafe { (IRQ_ENABLE_BASIC as *mut u32).read_volatile() } & ARM_TIMER_IRQ) != 0
+}
+
+pub unsafe fn gpio_interrupts_init() {
+    dsb();
+    let p = unsafe { bcm2835_lpa::Peripherals::steal() };
+    p.LIC.enable_2().write(|w| {
+        w.gpio_0()
+            .set_bit()
+            .gpio_1()
+            .set_bit()
+            .gpio_2()
+            .set_bit()
+            .gpio_3()
+            .set_bit()
+    });
+    dsb();
 }
 
 /// Returns an index to remove the handler.

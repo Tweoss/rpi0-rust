@@ -1,5 +1,7 @@
 use core::marker::{ConstParamTy_, UnsizedConstParamTy};
 
+use crate::println;
+
 const PIN_COUNT: usize = 54;
 
 #[derive(Default, Clone, Copy)]
@@ -139,6 +141,70 @@ where
                 32..PIN_COUNT => (gpio.gplev1().read().bits() >> (I % 32)) & 1,
                 _ => unreachable!(),
             }) == 1
+        }
+    }
+
+    pub fn set_falling_detection(&self, enabled: bool) {
+        unsafe {
+            let gpio = bcm2835_lpa::GPIO::steal();
+            if enabled {
+                match I {
+                    0..32 => gpio.gpfen0().write_with_zero(|w| w.bits(1 << I)),
+                    32..PIN_COUNT => gpio.gpfen1().write_with_zero(|w| w.bits(1 << (I % 32))),
+                    _ => unreachable!(),
+                }
+            } else {
+                match I {
+                    0..32 => gpio.gpfen0().modify(|r, w| w.bits(r.bits() & !(1 << I))),
+                    32..PIN_COUNT => gpio
+                        .gpfen1()
+                        .modify(|r, w| w.bits(r.bits() & !(1 << (I % 32)))),
+                    _ => unreachable!(),
+                }
+            }
+        }
+    }
+
+    pub fn set_rising_detection(&self, enabled: bool) {
+        unsafe {
+            let gpio = bcm2835_lpa::GPIO::steal();
+            if enabled {
+                match I {
+                    0..32 => gpio.gpren0().write_with_zero(|w| w.bits(1 << I)),
+                    32..PIN_COUNT => gpio.gpren1().write_with_zero(|w| w.bits(1 << (I % 32))),
+                    _ => unreachable!(),
+                }
+            } else {
+                match I {
+                    0..32 => gpio.gpren0().modify(|r, w| w.bits(r.bits() & !(1 << I))),
+                    32..PIN_COUNT => gpio
+                        .gpren1()
+                        .modify(|r, w| w.bits(r.bits() & !(1 << (I % 32)))),
+                    _ => unreachable!(),
+                }
+            }
+        }
+    }
+
+    pub fn event_detected(&self) -> bool {
+        (unsafe {
+            let gpio = bcm2835_lpa::GPIO::steal();
+            match I {
+                0..32 => (gpio.gpeds0().read().bits() >> I) & 1,
+                32..PIN_COUNT => (gpio.gpeds1().read().bits() >> (I % 32)) & 1,
+                _ => unreachable!(),
+            }
+        }) == 1
+    }
+
+    pub fn clear_event(&self) {
+        unsafe {
+            let gpio = bcm2835_lpa::GPIO::steal();
+            match I {
+                0..32 => gpio.gpeds0().write_with_zero(|w| w.bits(1 << I)),
+                32..PIN_COUNT => gpio.gpeds1().write_with_zero(|w| w.bits(1 << I)),
+                _ => unreachable!(),
+            }
         }
     }
 }
