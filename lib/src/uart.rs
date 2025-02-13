@@ -1,15 +1,10 @@
-use core::{
-    arch::asm,
-    borrow::BorrowMut,
-    cell::{BorrowMutError, Cell, LazyCell, RefCell, RefMut},
-    time::Duration,
-};
+use core::{arch::asm, cell::RefCell, time::Duration};
 
 use crate::{
     gpio::{Pin, PinFsel},
     timer,
 };
-use bcm2835_lpa::{Peripherals, UART0, UART1};
+use bcm2835_lpa::{Peripherals, UART1};
 use critical_section::Mutex;
 
 use crate::dsb;
@@ -203,23 +198,30 @@ macro_rules! println {
 
 /// Software version of uart.
 pub mod software {
+
     use crate::{
         cycle_counter::{delay_until, read},
-        gpio::{Pin, PinFsel},
+        gpio::{valid_pin, If, Pin, PinFsel, True},
+        timer::delay_ms,
     };
 
-    use super::DESIRED_BAUD_RATE;
-
-    pub struct SWUart {
-        p14: Pin<14, { PinFsel::Output }>,
+    pub struct SWUart<const INDEX: usize>
+    where
+        If<{ valid_pin(INDEX) }>: True,
+    {
+        pin: Pin<INDEX, { PinFsel::Output }>,
     }
 
-    impl SWUart {
-        pub fn setup_output(p14: Pin<14, { PinFsel::Unset }>) -> Self {
+    impl<const INDEX: usize> SWUart<INDEX>
+    where
+        If<{ valid_pin(INDEX) }>: True,
+    {
+        pub fn setup_output(pin: Pin<INDEX, { PinFsel::Unset }>) -> Self {
             critical_section::with(|_| {
-                let mut p14 = p14.into_output();
-                p14.write(true);
-                Self { p14 }
+                let mut pin = pin.into_output();
+                pin.write(true);
+                delay_ms(10);
+                Self { pin }
             })
         }
 
@@ -230,31 +232,35 @@ pub mod software {
             // to make accurate. The A+ runs at 700MHz so that is 700 * 1000 * 1000 cycles
             // per second or about 6076 cycles per bit.)
 
+            // Different clocks: here is 700 MHz, the uart1 is 250 MHz.
+            // Lower baud rate here (for the demo) because interrupt code is not
+            // fast enough to keep up with 8 times faster than 115200.
             const ASSUMED_CLOCK_RATE: usize = 700_000_000;
-            const MICROS_PER_CYCLE: usize = ASSUMED_CLOCK_RATE / 1_000_000;
-            const CYCLES_PER_BIT: u32 = ((MICROS_PER_CYCLE * 1_000_000) / DESIRED_BAUD_RATE) as u32;
+            const CYCLES_PER_MICRO: usize = ASSUMED_CLOCK_RATE / 1_000_000;
+            const DESIRED_BAUD_RATE: usize = 115_200;
+
+            const CYCLES_PER_BIT: u32 = ((CYCLES_PER_MICRO * 1_000_000) / DESIRED_BAUD_RATE) as u32;
             let start = read();
             let mut desired = start;
             for byte in bytes {
-                self.p14.write(false);
+                self.pin.write(false);
                 desired = desired.wrapping_add(CYCLES_PER_BIT);
                 delay_until(desired);
-                // delay(CYCLES_PER_BIT);
                 let mut v = *byte;
                 for _ in 0..u8::BITS {
-                    self.p14.write((v & 1) == 1);
+                    self.pin.write((v & 1) == 1);
                     desired = desired.wrapping_add(CYCLES_PER_BIT);
                     delay_until(desired);
                     v = v >> 1;
                 }
-                self.p14.write(true);
+                self.pin.write(true);
                 desired = desired.wrapping_add(CYCLES_PER_BIT);
                 delay_until(desired);
             }
         }
 
-        pub fn consume(self) -> Pin<14, { PinFsel::Output }> {
-            self.p14
+        pub fn consume(self) -> Pin<INDEX, { PinFsel::Output }> {
+            self.pin
         }
     }
 }

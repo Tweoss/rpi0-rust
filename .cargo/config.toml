@@ -1,5 +1,1 @@
-# [unstable]
-# build-std = ["core", "compiler_builtins", "alloc"]
 
-# [build]
-# target = ["armv6zk-none-eabihf.json"]

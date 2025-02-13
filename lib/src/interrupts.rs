@@ -7,7 +7,12 @@ use alloc::{boxed::Box, vec::Vec};
 use bcm2835_lpa::Peripherals;
 use critical_section::{CriticalSection, Mutex};
 
-use crate::{dsb, gpio::Pin, println, timer::timer_get_usec_raw};
+use crate::{
+    cp_asm_get, dsb,
+    gpio::{Pin, PinFsel},
+    println,
+    timer::timer_get_usec_raw,
+};
 
 // registers for ARM interrupt control
 // bcm2835; p112   [starts at 0x2000b200]
@@ -413,7 +418,8 @@ pub unsafe fn get_period() -> u32 {
     unsafe { PERIOD }
 }
 
-type InterruptHandler = Box<dyn FnMut(CriticalSection, u32) + Send + Sync>;
+/// Returns whether or not the interrupt was handled.
+type InterruptHandler = Box<dyn FnMut(CriticalSection, u32) -> bool + Send + Sync>;
 
 static INTERRUPT_HANDLERS: Mutex<RefCell<Vec<Option<InterruptHandler>>>> =
     Mutex::new(RefCell::new(alloc::vec![]));
@@ -434,7 +440,9 @@ unsafe extern "C" fn interrupt_vector(pc: u32) {
 
     for handler in INTERRUPT_HANDLERS.borrow_ref_mut(cs).iter_mut() {
         let Some(handler) = handler else { continue };
-        handler(cs, pc);
+        if handler(cs, pc) {
+            return;
+        }
     }
 
     // get the interrupt source: typically if you have

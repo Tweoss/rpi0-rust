@@ -88,6 +88,7 @@ pub fn demo() {
     store_gprof(gprof);
     let handler = register_interrupt_handler(alloc::boxed::Box::new(|_, pc| {
         Gprof::gprof_inc(pc as usize);
+        false
     }));
 
     assert!(interrupts_enabled(), "need interrupts to run gprof");

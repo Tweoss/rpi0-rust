@@ -13,7 +13,10 @@ pub fn read() -> u32 {
 
 #[inline]
 pub fn delay_until(cycle_number: u32) {
-    let cycles = cycle_number.wrapping_sub(read());
+    let a = read();
+    let cycles = cycle_number.wrapping_sub(a);
+    // Protect from when we pass the cycle before we measure necessary delay.
+    assert!(cycles < u32::MAX / 3, "{}", cycles);
     delay(cycles);
 }
 #[inline]
