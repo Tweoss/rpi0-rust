@@ -99,6 +99,10 @@ pub fn write_uart(bytes: &[u8]) {
         }
         uart.io().write(|w| unsafe { w.data().bits(*byte) });
     }
+    // Wait till finished.
+    while !uart.stat().read().tx_ready().bit_is_set() {
+        unsafe { asm!("nop") }
+    }
     dsb();
 }
 
