@@ -5,6 +5,7 @@ use crate::{
     caches, cycle_counter,
     gpio::{Pin, PinFsel},
 };
+use crate::{cp_asm_get, cp_asm_set_raw};
 
 use crate::{interrupts::run_user_code, println, timer::delay_ms};
 
@@ -72,7 +73,7 @@ extern "C" fn umain() -> ! {
     rpi_reboot()
 }
 
-pub fn demo() {
+pub fn demo() -> ! {
     test_interrupt_speed();
     run_user_code(umain);
 }
@@ -92,12 +93,12 @@ pub fn test_interrupt_speed() {
     test_swi("slow", unsafe { _interrupt_table_slow.as_ptr() });
     test_swi("fast", unsafe { _interrupt_table_fast.as_ptr() });
 
-    set_vector_table_base(core::ptr::null());
+    set_vector_table_base((core::ptr::null::<u32>() as usize) as u32);
 }
 
 fn test_swi(label: &str, vector_table: *const u32) {
     println!("Testing {label} at addr: {:#010x}", vector_table as usize);
-    set_vector_table_base(vector_table);
+    set_vector_table_base(vector_table as u32);
     let start = cycle_counter::read();
     syscall_hello(1);
     let end = cycle_counter::read();
@@ -135,12 +136,17 @@ fn test_swi(label: &str, vector_table: *const u32) {
     // }
 }
 
-fn set_vector_table_base(new_table: *const u32) -> u32 {
-    let old_address;
-    unsafe { asm!("mrc p15, 0, {}, c12, c0, 0", out (reg) old_address ) }
-    unsafe { asm!("mcr p15, 0, {}, c12, c0, 0", in (reg) (new_table as usize)) }
-    old_address
-}
+// cp_asm_get!(get_vector_table_base, p15, 0, c12, c0, 0);
+cp_asm_set_raw!(set_vector_table_base, p15, 0, c12, c0, 0);
+
+// fn set_vector_table_base(new_table: *const u32) -> u32 {
+//     let old_address = get_vector_table_base();
+//     // unsafe { asm!("mrc p15, 0, {}, c12, c0, 0", out (reg) old_address ) }
+
+//     // unsafe { asm!("mcr p15, 0, {}, c12, c0, 0", in (reg) (new_table as usize)) }
+//     // unsafe { asm!("mcr p15, 0, {}, c12, c0, 0", in (reg) (new_table as usize)) }
+//     old_address
+// }
 
 //
 // void notmain(void) {

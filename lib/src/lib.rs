@@ -9,6 +9,7 @@ mod allocator;
 pub mod caches;
 mod critical_section;
 pub mod cycle_counter;
+pub mod debug;
 pub mod gpio;
 pub mod interrupts;
 mod pin_array;
@@ -31,4 +32,94 @@ fn dsb() {
             tmp = in(reg) 0,
         )
     }
+}
+/// Flush the instruction prefetching pipeline.
+#[allow(unused)]
+fn prefetch_flush() {
+    unsafe { asm!( "mcr p15, 0, {}, c7, c5, 4", in(reg) 0, ) }
+}
+
+#[macro_export]
+/// Read from coprocessor register.
+macro_rules! cp_asm_get {
+    ($name: ident, $coprocessor: ident, $opcode1: literal, $Crn: ident, $Crm: ident, $opcode2: literal ) => {
+        #[inline]
+        fn $name() -> u32 {
+            let v;
+            unsafe {
+                core::arch::asm!(
+                    concat!(
+                        "mrc ",
+                        stringify!($coprocessor),
+                        ", ",
+                        stringify!($opcode1),
+                        ", {v}, ",
+                        stringify!($Crn),
+                        ", ",
+                        stringify!($Crm),
+                        ", ",
+                        stringify!($opcode2)
+                    ),
+                    v = out(reg) v
+                );
+            }
+            v
+        }
+    };
+}
+
+#[macro_export]
+/// Write to coprocessor register with prefetch flush.
+macro_rules! cp_asm_set {
+    ($name: ident, $coprocessor: ident, $opcode1: literal, $Crn: ident, $Crm: ident, $opcode2: literal ) => {
+        #[inline]
+        fn $name(v: u32) {
+            unsafe {
+                core::arch::asm!(
+                    concat!(
+                        "mcr ",
+                        stringify!($coprocessor),
+                        ", ",
+                        stringify!($opcode1),
+                        ", {v}, ",
+                        stringify!($Crn),
+                        ", ",
+                        stringify!($Crm),
+                        ", ",
+                        stringify!($opcode2)
+                    ),
+                    v = in(reg) v
+                );
+            }
+            // Prefetch flush.
+            crate::prefetch_flush();
+        }
+    };
+}
+
+#[macro_export]
+/// Write to coprocessor register without prefetch flush.
+macro_rules! cp_asm_set_raw {
+    ($name: ident, $coprocessor: ident, $opcode1: literal, $Crn: ident, $Crm: ident, $opcode2: literal ) => {
+        #[inline]
+        fn $name(v: u32) {
+            unsafe {
+                core::arch::asm!(
+                    concat!(
+                        "mcr ",
+                        stringify!($coprocessor),
+                        ", ",
+                        stringify!($opcode1),
+                        ", {v}, ",
+                        stringify!($Crn),
+                        ", ",
+                        stringify!($Crm),
+                        ", ",
+                        stringify!($opcode2)
+                    ),
+                    v = in(reg) v
+                );
+            }
+        }
+    };
 }

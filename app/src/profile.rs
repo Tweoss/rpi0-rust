@@ -1,13 +1,12 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use core::{arch::asm, cell::RefCell};
+use core::cell::RefCell;
 use critical_section::Mutex;
 use pi0_lib::{
-    dbg,
     interrupts::{
         self, interrupts_enabled, register_interrupt_handler, remove_interrupt_handler,
-        timer_clear, timer_initialized,
+        timer_initialized,
     },
     print,
 };

@@ -1,6 +1,5 @@
+//! # Handle GPIO pins
 use core::marker::{ConstParamTy_, UnsizedConstParamTy};
-
-use crate::println;
 
 const PIN_COUNT: usize = 54;
 
@@ -33,6 +32,9 @@ pub enum PinFsel {
 impl UnsizedConstParamTy for PinFsel {}
 impl ConstParamTy_ for PinFsel {}
 
+/// A representation of a singular pin.
+/// The associated `FSEL` of type [`PinFsel`] indicates the compile-time state
+/// of the pin.
 pub struct Pin<const INDEX: usize, const FSEL: PinFsel>
 where
     If<{ valid_pin(INDEX) }>: True,

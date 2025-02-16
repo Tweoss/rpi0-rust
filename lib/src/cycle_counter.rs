@@ -1,14 +1,14 @@
-use core::arch::asm;
+use crate::{cp_asm_get, cp_asm_set_raw};
+
+cp_asm_set_raw!(cycle_counter_init, p15, 0, c15, c12, 0);
+cp_asm_get!(cycle_counter_get, p15, 0, c15, c12, 1);
 
 pub fn init() {
-    let x = 1;
-    unsafe { asm!("mcr p15,0,{},c15,c12,0", in (reg) x) };
+    cycle_counter_init(1);
 }
 
 pub fn read() -> u32 {
-    let x;
-    unsafe { asm!("mrc p15,0,{},c15,c12,1", out (reg) x) };
-    x
+    cycle_counter_get()
 }
 
 #[inline]

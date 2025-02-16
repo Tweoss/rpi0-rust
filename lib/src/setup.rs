@@ -18,6 +18,7 @@ pub const STACK_ADDR: u32 = 0x8000000;
 /// Taken from dawson engler's 140e staff code.
 pub extern "C" fn rpi_reboot() -> ! {
     // uart_flush_tx();
+    disable_interrupts();
     delay_ms(10);
 
     // is there a way to speed this up?

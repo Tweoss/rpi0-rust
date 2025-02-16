@@ -7,12 +7,7 @@ use alloc::{boxed::Box, vec::Vec};
 use bcm2835_lpa::Peripherals;
 use critical_section::{CriticalSection, Mutex};
 
-use crate::{
-    cp_asm_get, dsb,
-    gpio::{Pin, PinFsel},
-    println,
-    timer::timer_get_usec_raw,
-};
+use crate::{dsb, timer::timer_get_usec_raw};
 
 // registers for ARM interrupt control
 // bcm2835; p112   [starts at 0x2000b200]
@@ -137,8 +132,6 @@ _data_abort_asm:              .word data_abort_asm
 _interrupt_asm:               .word interrupt_asm
 _interrupt_table_end:   @ end of the table.
 
-@ only handler that should run since we 
-@ only enable general interrupts
 interrupt_asm:
   @ NOTE:
   @  - each mode has its own <sp> that persists when
@@ -169,24 +162,12 @@ interrupt_asm:
                         @ 2. moves <lr> into the <pc> of that
                         @    mode.
 
-@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-@ currently we don't use any of these, so just panic and
-@ and halt.  should not occur!
-
 reset_asm:
     @ Q: if we delete this instruction what happens?
     mov sp, {INT_STACK_ADDR}   
     @ Q: is <4> correct?  how to tell?
     sub   r0, lr, #4
     bl    reset_vector
-
-@ note: we compile this <.S> file with gcc 
-@ so that we can use C macro's to clean up.
-@ note the use of semi-colons!
-@ #define unexpected(fn, offset)      \
-@     mov sp, {INT_STACK_ADDR};        \
-@     sub   r0, lr, #(offset);        \
-@     bl    fn
 
 @ Q: what are the right offsets for the following?
 undefined_instruction_asm:
@@ -236,12 +217,20 @@ software_interrupt_asm:
     @ bl syscall_vector
 prefetch_abort_asm:
     mov sp, {INT_STACK_ADDR}
-    sub r0, lr, 4
+    push {{r0-r12,lr}}
+    sub r0, lr, #4
     bl prefetch_abort_vector
+    pop {{r0-r12,lr}}
+    sub lr, lr, #4
+    movs pc, lr 
 data_abort_asm:
     mov sp, {INT_STACK_ADDR}
-    sub r0, lr, 4
+    push {{r0-r12,lr}}
+    sub r0, lr, #12
     bl data_abort_vector
+    pop {{r0-r12,lr}}
+    sub lr, lr, #12
+    movs pc, lr 
 
 @
 @ utility routine:
@@ -333,7 +322,7 @@ pub fn interrupts_enabled() -> bool {
 }
 
 #[allow(static_mut_refs)]
-pub fn run_user_code(f: extern "C" fn() -> !) {
+pub fn run_user_code(f: extern "C" fn() -> !) -> ! {
     // Use the top of the stack because it grows down.
     let stack = (unsafe { USER_STACK.last().unwrap() }) as *const u32;
     assert!(!stack.is_null());
@@ -399,11 +388,11 @@ extern "C" fn undefined_instruction_vector(pc: u32) {
 }
 #[no_mangle]
 extern "C" fn prefetch_abort_vector(pc: u32) {
-    panic!("unexpected prefetch abort: pc={}\n", pc);
+    crate::debug::prefetch_abort_vector(pc);
 }
 #[no_mangle]
 extern "C" fn data_abort_vector(pc: u32) {
-    panic!("unexpected data abort: pc={}\n", pc);
+    crate::debug::data_abort_vector(pc);
 }
 
 static mut CNT: u32 = 0;

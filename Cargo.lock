@@ -13,6 +13,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitfield"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c7e6caee68becd795bfd65f1a026e4d00d8f0c2bc9be5eb568e1015f9ce3c34"
+dependencies = [
+ "bitfield-macros",
+]
+
+[[package]]
+name = "bitfield-macros"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "331afbb18ce7b644c0b428726d369c5dd37ca0b815d72a459fcc2896c3c8ad32"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "bootloader"
 version = "0.1.0"
 dependencies = [
@@ -162,6 +182,7 @@ name = "pi0-lib"
 version = "0.1.0"
 dependencies = [
  "bcm2835-lpa",
+ "bitfield",
  "critical-section",
  "frunk",
  "heapless",
