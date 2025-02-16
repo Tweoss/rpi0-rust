@@ -136,6 +136,15 @@ pub struct UartWriter {
     _p15: Pin<15, { PinFsel::Alt5 }>,
 }
 
+impl UartWriter {
+    pub unsafe fn steal() -> Self {
+        Self {
+            _p14: Pin::forge(),
+            _p15: Pin::forge(),
+        }
+    }
+}
+
 impl core::fmt::Write for &mut UartWriter {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         write_uart(s.as_bytes());
@@ -193,6 +202,15 @@ macro_rules! println {
             core::fmt::Write::write_fmt(&mut w, format_args!($($args)*)).unwrap();
             core::fmt::Write::write_str(&mut w, "\n").unwrap();
         });
+    };
+}
+
+#[macro_export]
+macro_rules! steal_println {
+    ($( $args:tt)* ) => {
+        let mut w = &mut unsafe { $crate::uart::UartWriter::steal() };
+        core::fmt::Write::write_fmt(&mut w, format_args!($($args)*)).unwrap();
+        core::fmt::Write::write_str(&mut w, "\n").unwrap();
     };
 }
 
