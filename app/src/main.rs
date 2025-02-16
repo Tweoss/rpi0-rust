@@ -14,8 +14,11 @@ use alloc::boxed::Box;
 use bcm2835_lpa::Peripherals;
 use critical_section::Mutex;
 use heapless::Deque;
-use pi0_lib::debug::{set_breakpoint_status, BreakpointStatus, WatchpointStatus};
-use pi0_lib::interrupts::enable_interrupts;
+use pi0_lib::debug::{
+    disable_single_stepping, set_breakpoint_address, set_breakpoint_status, BreakpointStatus,
+    WatchpointStatus,
+};
+use pi0_lib::interrupts::{enable_interrupts, run_user_code};
 use pi0_lib::setup::rpi_reboot;
 use pi0_lib::{caches, dbg, timer};
 use pi0_lib::{
@@ -56,48 +59,51 @@ fn main() {
     // dbg!(a);
 
     // print();
-    // let addr = (print as *const ()) as u32;
-    // println!("addr: {:04x}", addr);
-    // // set_breakpoint_address((print as *const ()) as u32);
-    // set_breakpoint_address(0);
-    // set_breakpoint_status(BreakpointStatus::Enabled { matching: false });
+    // set_breakpoint_address((print as *const ()) as u32);
+    set_breakpoint_address(0);
+    set_breakpoint_status(BreakpointStatus::Enabled { matching: false });
 
-    // extern "C" fn run_fib() -> ! {
-    //     let a = 1;
-    //     let mut b = a + a;
-    //     b = b * b << a + 23;
-    //     for i in 0..2 {
-    //         println!("fib {i} = {}", fib(i));
-    //     }
-    //     core::hint::black_box(b);
-    //     panic!("");
-    //     // set_breakpoint_status(BreakpointStatus::Disabled);
-    //     //     //
-    //     //     // // set_breakpoint_status(BreakpointStatus::Disabled);
-    //     //     loop {}
-    //     //     // rpi_reboot();
-    // }
-    // #[no_mangle]
-    // pub extern "C" fn fib(x: usize) -> usize {
-    //     let mut a = 1;
-    //     let mut b = 1;
-    //     for _ in 0..x {
-    //         let c = a;
-    //         a += b;
-    //         b = c;
-    //     }
-    //     b
-    // }
-    // // // set_breakpoint_status(BreakpointStatus::Disabled);
-    // run_user_code(run_fib);
-    pi0_lib::syscall::demo();
+    extern "C" fn run_fib() -> ! {
+        let a = 1;
+        let mut b = a + a;
+        b = b * b << a + 23;
+        for i in 0..10 {
+            // println!("fib {i} = {}", fib(i));
+            core::hint::black_box(fib(i));
+            // println!("hi");
+        }
+        core::hint::black_box(b);
+        disable_single_stepping();
+        // panic!("");
+        // loop {}
+        // set_breakpoint_status(BreakpointStatus::Disabled);
+        //     //
+        //     // // set_breakpoint_status(BreakpointStatus::Disabled);
+        //     loop {}
+        println!("RUN FIB DONE!!!");
+        rpi_reboot();
+    }
+    #[no_mangle]
+    pub extern "C" fn fib(x: usize) -> usize {
+        let mut a = 1;
+        let mut b = 1;
+        for _ in 0..x {
+            let c = a;
+            a += b;
+            b = c;
+        }
+        b
+    }
+    // // set_breakpoint_status(BreakpointStatus::Disabled);
+    run_user_code(run_fib);
+    // syscall::demo();
     // print();
     // *x = 1;
     // core::hint::black_box(*x);
     // *x *= 2 * *x;
     // *x *= *x * *x;
     // core::hint::black_box(x);
-    set_breakpoint_status(BreakpointStatus::Disabled);
+    // set_breakpoint_status(BreakpointStatus::Disabled);
     // print();
     // print();
 

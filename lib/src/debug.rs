@@ -2,22 +2,30 @@
 //!
 use bitfield::bitfield;
 
-use crate::{cp_asm_get, cp_asm_set, dbg, prefetch_flush, print, println};
+use crate::{cp_asm_get, cp_asm_set, prefetch_flush, steal_println};
 
 pub fn data_abort_vector(pc: u32) {
-    println!("pc = {:04x}", pc);
-    set_watchpoint_status(WatchpointStatus::Disabled);
-    dbg!("data abort vector", get_watchpoint_status());
+    if let WatchpointStatus::Enabled { .. } = get_watchpoint_status() {
+        steal_println!("pc = {:04x}", pc);
+        set_watchpoint_status(WatchpointStatus::Disabled);
+        return;
+    }
 
-    // panic!("unexpected data abort: pc={}\n", pc);
+    panic!("unexpected data abort: pc={}\n", pc);
 }
 
 pub fn prefetch_abort_vector(pc: u32) {
-    print!("prefetch abort vector, pc = ");
-    println!("{:#06x}", pc);
-    // dbg!("disabling breakpoint");
-    set_breakpoint_address(pc);
-    // panic!("unexpected data abort: pc={}\n", pc);
+    steal_println!("step pc: {:04x}", pc);
+    // Disable single stepping.
+    if pc == disable_single_stepping as *const () as u32 {
+        set_breakpoint_status(BreakpointStatus::Disabled);
+    }
+    if let BreakpointStatus::Enabled { matching: false } = get_breakpoint_status() {
+        // Update the pc for single stepping.
+        set_breakpoint_address(pc);
+        return;
+    }
+    panic!("unexpected data abort: pc={}\n", pc);
 }
 
 bitfield! {
@@ -128,6 +136,10 @@ pub fn set_breakpoint_status(status: BreakpointStatus) {
 pub fn set_breakpoint_address(addr: u32) {
     bvr0_set(addr);
     // TODO: might need prefetch fluhs.
+}
+
+pub fn disable_single_stepping() {
+    core::hint::black_box(0);
 }
 
 pub fn setup() {
