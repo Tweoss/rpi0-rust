@@ -2,13 +2,17 @@
 //!
 use core::cell::RefCell;
 
+use alloc::{boxed::Box, vec::Vec};
 use bitfield::bitfield;
 use critical_section::Mutex;
 
 // TODO: grab all registers when switching into prefetch abort
 //       have routine to switch between threads of control
 
-use crate::{cp_asm_get, cp_asm_set, prefetch_flush, steal_print, steal_println};
+use crate::{
+    cp_asm_get, cp_asm_set, dbg, interrupts::run_user_code, prefetch_flush, println,
+    setup::rpi_reboot, steal_print, steal_println,
+};
 
 pub fn data_abort_vector(pc: u32) {
     if let WatchpointStatus::Enabled { .. } = get_watchpoint_status() {
@@ -30,10 +34,107 @@ pub struct Registers {
 
 static PREVIOUS_REGISTERS: Mutex<RefCell<Option<Registers>>> = Mutex::new(RefCell::new(None));
 
-pub fn prefetch_abort_vector(pc: u32, registers: &Registers) {
+static THREADS: Mutex<RefCell<Vec<Thread>>> = Mutex::new(RefCell::new(Vec::new()));
+
+struct Thread {
+    function_pointer: usize,
+    registers: Registers,
+    stack: Vec<u32>,
+    finished: bool,
+    switch_at: Option<usize>,
+    current_count: usize,
+}
+
+// TODO: Safe because we don't have multiple threads running at same time?
+unsafe impl Send for Thread {}
+
+impl Thread {
+    fn from_fn(f: extern "C" fn()) -> Self {
+        let pc = f as *const u32 as usize;
+        let mut stack = Vec::new();
+        stack.resize(1_000_usize, 0);
+
+        Self {
+            function_pointer: pc,
+            registers: Registers {
+                lr: thread_finished as *const () as u32,
+                pc: pc as u32,
+                sp: unsafe { (&stack[0] as *const u32).offset(stack.len() as isize) } as u32,
+                r: [0_u32; 13],
+            },
+            finished: false,
+            stack,
+            switch_at: None,
+            current_count: 0,
+        }
+    }
+}
+
+// static A_INSTRUCTION_COUNT: Mutex<RefCell<usize>> = Mutex::new(RefCell::new(0));
+// static B_INSTRUCTION_COUNT: Mutex<RefCell<usize>> = Mutex::new(RefCell::new(0));
+
+// If we're running interleaving, we stash the original registers here.
+static RUNNING_INTERLEAVING: Mutex<RefCell<Option<(usize, Registers)>>> =
+    Mutex::new(RefCell::new(None));
+
+pub fn prefetch_abort_vector(pc: u32, registers: Registers) -> Registers {
     let cs = unsafe { critical_section::CriticalSection::new() };
 
+    if RUNNING_INTERLEAVING.borrow_ref_mut(cs).is_none() {
+        if pc == run_interleaving as *const () as u32 {
+            steal_println!("STARTING INTERLAVINg");
+            let threads = THREADS.borrow_ref_mut(cs);
+            let thread = threads
+                .last()
+                .expect("tried to start threading without a thread");
+            let index = threads.len() - 1;
+            *RUNNING_INTERLEAVING.borrow_ref_mut(cs) = Some((index, registers));
+            return thread.registers.clone();
+        }
+        // steal_println!("not running interleaving, continuing");
+        set_breakpoint_address(pc);
+        return registers;
+    }
+
+    // We are threading.
+    // TODO: handle interleaving
+    // Disable single stepping and also switch between threads.
+    if pc == thread_finished as *const () as u32 {
+        steal_println!("thread finished");
+        let mut threads = THREADS.borrow_ref_mut(cs);
+        let mut running = RUNNING_INTERLEAVING.borrow_ref_mut(cs);
+        let inner = running.as_mut().unwrap();
+        threads.remove(inner.0);
+        if let Some(next_thread) = threads.last() {
+            let index = threads.len() - 1;
+            inner.0 = index;
+            return next_thread.registers.clone();
+        }
+
+        set_breakpoint_status(BreakpointStatus::Disabled);
+        return running.take().unwrap().1;
+    }
+    if let BreakpointStatus::Enabled { matching: false } = get_breakpoint_status() {
+        // Update the pc for single stepping.
+        set_breakpoint_address(pc);
+        return registers.clone();
+    }
+
+    return registers;
+
     let mut prev = PREVIOUS_REGISTERS.borrow_ref_mut(cs);
+
+    // Have entered a.
+    // let a_switch_addr = (a as *mut ()) as usize + *A_INSTRUCTION_COUNT.borrow_ref(cs) * 8;
+
+    // if pc as usize == a_switch_addr {
+    //     // if A_INSTRUCTION_COUNT == 0 {
+
+    //     // }
+    //     steal_println!("running b");
+    //     b();
+    // }
+
     if let Some(p) = &*prev {
         let r = registers;
         steal_print!("updates: ");
@@ -48,6 +149,13 @@ pub fn prefetch_abort_vector(pc: u32, registers: &Registers) {
         }
         steal_println!("");
     }
+    // Disable single stepping and also switch between threads.
+    if pc == spawn as *const () as u32 {
+        dbg!(registers.r[0]);
+        steal_println!("pushing back");
+        // set_breakpoint_status(BreakpointStatus::Disabled);
+        return registers.clone();
+    }
 
     // steal_println!("registers: {:?}", registers);
     steal_println!("step pc: {:04x}", pc);
@@ -56,12 +164,12 @@ pub fn prefetch_abort_vector(pc: u32, registers: &Registers) {
     if pc == disable_single_stepping as *const () as u32 {
         steal_println!("disabling single stepping");
         set_breakpoint_status(BreakpointStatus::Disabled);
-        return;
+        return registers.clone();
     }
     if let BreakpointStatus::Enabled { matching: false } = get_breakpoint_status() {
         // Update the pc for single stepping.
         set_breakpoint_address(pc);
-        return;
+        return registers.clone();
     }
     panic!("unexpected prefetch abort: pc={}\n", pc);
 }
@@ -176,6 +284,7 @@ pub fn set_breakpoint_address(addr: u32) {
     // TODO: might need prefetch fluhs.
 }
 
+#[inline(never)]
 pub fn disable_single_stepping() {
     core::hint::black_box(0);
 }
@@ -235,25 +344,77 @@ pub fn setup() {
 
 static mut SHARED_STATE: usize = 0;
 
-fn a() {
-    unsafe { SHARED_STATE += 1 };
-    disable_single_stepping();
+#[inline(never)]
+fn spawn(f: extern "C" fn() -> ()) {
+    // TODO: push back onto threads
+    critical_section::with(|cs| {
+        THREADS.borrow_ref_mut(cs).push(Thread::from_fn(f));
+    });
+    core::hint::black_box(f);
 }
 
-fn b() {
+#[inline(never)]
+fn run_interleaving() {
+    core::hint::black_box(0);
+}
+
+#[inline(never)]
+fn thread_finished() {
+    println!("thread finished");
+    core::hint::black_box(0);
+}
+
+extern "C" fn a() {
+    println!("sup from a");
+    println!("a should now exit");
     unsafe { SHARED_STATE += 1 };
+    // thread_finished((a as *mut ()) as usize);
+}
+
+extern "C" fn b() {
+    println!("sup from b");
+    unsafe { SHARED_STATE += 1 };
+    dbg!(unsafe { SHARED_STATE });
 }
 
 fn check_state_success() -> bool {
     unsafe { SHARED_STATE == 2 }
 }
 
-pub fn demo() {
-    a();
-    b();
+extern "C" fn umain() -> ! {
+    // TODO: allow spawn to set current offset (still exit if hit thread_finished though)
+    //       have run_interleaving return whether or not finished
+    spawn(a);
+    spawn(b);
 
+    run_interleaving();
+
+    // let a = 1;
+    // let mut b = a + a;
+    // b = b * b << a + 23;
+    // for i in 0..1 {
+    //     core::hint::black_box(fibonacci(core::hint::black_box(i)));
+    // }
+    // core::hint::black_box(b);
+
+    disable_single_stepping();
+    println!("UMAIN DONE!!!");
+    rpi_reboot()
+}
+
+pub fn demo() {
+    // a();
+    // b();
+
+    set_watchpoint_status(WatchpointStatus::Disabled);
     set_breakpoint_address(0);
     set_breakpoint_status(BreakpointStatus::Enabled { matching: false });
+
+    run_user_code(umain);
+    // set_breakpoint_address(0);
+    // set_breakpoint_status(BreakpointStatus::Enabled { matching: false });
+
+    a();
 
     // for
     // Handler runs b after

@@ -217,7 +217,6 @@ software_interrupt_asm:
     @ bl syscall_vector
 prefetch_abort_asm:
     mov sp, {INT_STACK_ADDR}
-    push {{lr}}
     push {{r0-r12}}
     @ grab the registers
     cps {SYSTEM_MODE}
@@ -234,6 +233,9 @@ prefetch_abort_asm:
     
     mov r1, sp
     bl prefetch_abort_vector
+    @ allow handler to set return point
+    mov lr, r0
+
     pop {{r2-r3}}
     cps {SYSTEM_MODE}
     mov r13,r2
@@ -243,8 +245,6 @@ prefetch_abort_asm:
     @ switch to system, set r13, r14 to r2, r3
     @ switch back
     pop {{r0-r12}}
-    pop {{lr}}
-    sub lr, lr, #4
     movs pc, lr 
 data_abort_asm:
     mov sp, {INT_STACK_ADDR}
@@ -412,21 +412,26 @@ extern "C" fn undefined_instruction_vector(pc: u32) {
     panic!("unexpected undef-inst: pc={}\n", pc);
 }
 #[no_mangle]
-extern "C" fn prefetch_abort_vector(pc: u32, sp: u32) {
+extern "C" fn prefetch_abort_vector(pc: u32, sp: u32) -> u32 {
     // Registers 0-14
-    let dump: &[u32; 15] = unsafe {
-        core::slice::from_raw_parts(sp as *const u32, 15)
+    let dump: &mut [u32; 15] = unsafe {
+        core::slice::from_raw_parts_mut(sp as *mut u32, 15)
             .try_into()
             .unwrap()
     };
     let registers = Registers {
         pc,
-        lr: dump[1],
         sp: dump[0],
+        lr: dump[1],
         // Performs a copy.
         r: dump[2..].try_into().unwrap(),
     };
-    crate::debug::prefetch_abort_vector(pc, &registers);
+    // Let the handler decide where to return to.
+    let new_registers = crate::debug::prefetch_abort_vector(pc, registers);
+    dump[0] = new_registers.sp;
+    dump[1] = new_registers.lr;
+    dump[2..].copy_from_slice(&new_registers.r);
+    new_registers.pc
 }
 #[no_mangle]
 extern "C" fn data_abort_vector(pc: u32) {

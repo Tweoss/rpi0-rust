@@ -34,29 +34,6 @@ extern "C" fn print() {
     dbg!("printing hullo");
 }
 
-#[no_mangle]
-extern "C" fn fibonacci(x: usize) -> usize {
-    match x {
-        0 => 1,
-        1 => 1,
-        x => fibonacci(x - 1) + fibonacci(x - 2),
-    }
-}
-
-#[no_mangle]
-extern "C" fn run_fib() -> ! {
-    let a = 1;
-    let mut b = a + a;
-    b = b * b << a + 23;
-    for i in 0..3 {
-        core::hint::black_box(fibonacci(core::hint::black_box(i)));
-    }
-    core::hint::black_box(b);
-    disable_single_stepping();
-    println!("RUN FIB DONE!!!");
-    rpi_reboot();
-}
-
 // first, run a, run b, collect output state
 //
 // then, enable mismatch breakpoint, run a single instruction, save registers in static
@@ -81,6 +58,8 @@ fn main() {
 
     enable_interrupts();
 
+    pi0_lib::debug::demo();
+
     // let mut x: Box<u32> = Box::new(0);
     // pi0_lib::debug::set_watchpoint_address(((x.as_ref()) as *const u32) as u32);
     // pi0_lib::debug::set_watchpoint_status(WatchpointStatus::Enabled {
@@ -93,13 +72,13 @@ fn main() {
     // dbg!(a);
 
     // print();
-    // set_breakpoint_address((print as *const ()) as u32);
-    pi0_lib::debug::set_watchpoint_status(WatchpointStatus::Disabled);
-    set_breakpoint_address(0);
-    set_breakpoint_status(BreakpointStatus::Enabled { matching: false });
+    // // set_breakpoint_address((print as *const ()) as u32);
+    // pi0_lib::debug::set_watchpoint_status(WatchpointStatus::Disabled);
+    // set_breakpoint_address(0);
+    // set_breakpoint_status(BreakpointStatus::Enabled { matching: false });
 
-    // // set_breakpoint_status(BreakpointStatus::Disabled);
-    run_user_code(run_fib);
+    // // // set_breakpoint_status(BreakpointStatus::Disabled);
+    // run_user_code(run_fib);
     // syscall::demo();
     // print();
     // *x = 1;
