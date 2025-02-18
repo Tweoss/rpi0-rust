@@ -11,6 +11,8 @@ use bcm2835_lpa::Peripherals;
 use interrupts::disable_interrupts;
 
 pub const SUPER_MODE: u32 = 0b10011;
+pub const SYSTEM_MODE: u32 = 0b11111;
+pub const ABORT_MODE: u32 = 0b10111;
 pub const USER_MODE: u32 = 0b10000;
 pub const STACK_ADDR: u32 = 0x8000000;
 

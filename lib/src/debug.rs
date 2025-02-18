@@ -1,8 +1,14 @@
 //! # Debug hardware functionality.
 //!
-use bitfield::bitfield;
+use core::cell::RefCell;
 
-use crate::{cp_asm_get, cp_asm_set, prefetch_flush, steal_println};
+use bitfield::bitfield;
+use critical_section::Mutex;
+
+// TODO: grab all registers when switching into prefetch abort
+//       have routine to switch between threads of control
+
+use crate::{cp_asm_get, cp_asm_set, prefetch_flush, steal_print, steal_println};
 
 pub fn data_abort_vector(pc: u32) {
     if let WatchpointStatus::Enabled { .. } = get_watchpoint_status() {
@@ -14,18 +20,50 @@ pub fn data_abort_vector(pc: u32) {
     panic!("unexpected data abort: pc={}\n", pc);
 }
 
-pub fn prefetch_abort_vector(pc: u32) {
+#[derive(Debug, Clone)]
+pub struct Registers {
+    pub pc: u32,
+    pub lr: u32,
+    pub sp: u32,
+    pub r: [u32; 13],
+}
+
+static PREVIOUS_REGISTERS: Mutex<RefCell<Option<Registers>>> = Mutex::new(RefCell::new(None));
+
+pub fn prefetch_abort_vector(pc: u32, registers: &Registers) {
+    let cs = unsafe { critical_section::CriticalSection::new() };
+
+    let mut prev = PREVIOUS_REGISTERS.borrow_ref_mut(cs);
+    if let Some(p) = &*prev {
+        let r = registers;
+        steal_print!("updates: ");
+        if r.pc != p.pc {
+            steal_print!("pc = {}, ", r.pc);
+        }
+        if r.lr != p.lr {
+            steal_print!("lr = {}, ", r.lr);
+        }
+        if r.sp != p.sp {
+            steal_print!("sp = {}, ", r.sp);
+        }
+        steal_println!("");
+    }
+
+    // steal_println!("registers: {:?}", registers);
     steal_println!("step pc: {:04x}", pc);
+    *prev = Some(registers.clone());
     // Disable single stepping.
     if pc == disable_single_stepping as *const () as u32 {
+        steal_println!("disabling single stepping");
         set_breakpoint_status(BreakpointStatus::Disabled);
+        return;
     }
     if let BreakpointStatus::Enabled { matching: false } = get_breakpoint_status() {
         // Update the pc for single stepping.
         set_breakpoint_address(pc);
         return;
     }
-    panic!("unexpected data abort: pc={}\n", pc);
+    panic!("unexpected prefetch abort: pc={}\n", pc);
 }
 
 bitfield! {
@@ -178,4 +216,46 @@ pub fn setup() {
     bcr0_set(bcr.0);
 
     crate::prefetch_flush();
+}
+
+// TODO:
+// implement try_lock
+//
+// implement pre-emptive thread for single stepping. capture r0-r14.
+// this will only work on user mode because if processor is in privileged mode,
+// mismatch won't trigger interrupts (13-33 of arm1176.pdf)
+//
+// implement fork, (exec with mode), exit, waitpid, yield. only need to save r4-14+cpsr
+//
+// want to be able to yield, calling a function and switching mode
+// need to dump CPSR too apparently
+//
+// 1. have dumping register, basically just copy
+// 2.
+
+static mut SHARED_STATE: usize = 0;
+
+fn a() {
+    unsafe { SHARED_STATE += 1 };
+    disable_single_stepping();
+}
+
+fn b() {
+    unsafe { SHARED_STATE += 1 };
+}
+
+fn check_state_success() -> bool {
+    unsafe { SHARED_STATE == 2 }
+}
+
+pub fn demo() {
+    a();
+    b();
+
+    set_breakpoint_address(0);
+    set_breakpoint_status(BreakpointStatus::Enabled { matching: false });
+
+    // for
+    // Handler runs b after
+    // a();
 }

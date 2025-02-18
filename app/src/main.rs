@@ -10,7 +10,6 @@ mod setup;
 
 use core::cell::RefCell;
 
-use alloc::boxed::Box;
 use bcm2835_lpa::Peripherals;
 use critical_section::Mutex;
 use heapless::Deque;
@@ -34,6 +33,41 @@ static PIN_VALUES: Mutex<RefCell<Deque<bool, 20>>> = Mutex::new(RefCell::new(Deq
 extern "C" fn print() {
     dbg!("printing hullo");
 }
+
+#[no_mangle]
+extern "C" fn fibonacci(x: usize) -> usize {
+    match x {
+        0 => 1,
+        1 => 1,
+        x => fibonacci(x - 1) + fibonacci(x - 2),
+    }
+}
+
+#[no_mangle]
+extern "C" fn run_fib() -> ! {
+    let a = 1;
+    let mut b = a + a;
+    b = b * b << a + 23;
+    for i in 0..3 {
+        core::hint::black_box(fibonacci(core::hint::black_box(i)));
+    }
+    core::hint::black_box(b);
+    disable_single_stepping();
+    println!("RUN FIB DONE!!!");
+    rpi_reboot();
+}
+
+// first, run a, run b, collect output state
+//
+// then, enable mismatch breakpoint, run a single instruction, save registers in static
+// from handler, run b fully, (return from handler will restore registers), then return to a
+// run a to completion, compare output state
+//
+//
+//
+
+// into user mode, enable breakpoint.
+//
 
 fn main() {
     let mut peripherals = unsafe { Peripherals::steal() };
@@ -60,40 +94,10 @@ fn main() {
 
     // print();
     // set_breakpoint_address((print as *const ()) as u32);
+    pi0_lib::debug::set_watchpoint_status(WatchpointStatus::Disabled);
     set_breakpoint_address(0);
     set_breakpoint_status(BreakpointStatus::Enabled { matching: false });
 
-    extern "C" fn run_fib() -> ! {
-        let a = 1;
-        let mut b = a + a;
-        b = b * b << a + 23;
-        for i in 0..10 {
-            // println!("fib {i} = {}", fib(i));
-            core::hint::black_box(fib(i));
-            // println!("hi");
-        }
-        core::hint::black_box(b);
-        disable_single_stepping();
-        // panic!("");
-        // loop {}
-        // set_breakpoint_status(BreakpointStatus::Disabled);
-        //     //
-        //     // // set_breakpoint_status(BreakpointStatus::Disabled);
-        //     loop {}
-        println!("RUN FIB DONE!!!");
-        rpi_reboot();
-    }
-    #[no_mangle]
-    pub extern "C" fn fib(x: usize) -> usize {
-        let mut a = 1;
-        let mut b = 1;
-        for _ in 0..x {
-            let c = a;
-            a += b;
-            b = c;
-        }
-        b
-    }
     // // set_breakpoint_status(BreakpointStatus::Disabled);
     run_user_code(run_fib);
     // syscall::demo();

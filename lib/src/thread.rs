@@ -11,8 +11,8 @@ use heapless::Deque;
 
 use crate::println;
 
-// Conclusion: things are pushed in ascending order
-// sp always points one beyond
+// Conclusion: things are pushed in decreasing order
+// sp always points to lowest filled position
 // pub extern "C" fn test_stack_pointer(arg1: u32, arg2: u32) {
 //     let guard = InterruptGuard::new();
 //     core::hint::black_box((arg1, arg2));

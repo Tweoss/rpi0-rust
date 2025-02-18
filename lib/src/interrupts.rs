@@ -7,7 +7,7 @@ use alloc::{boxed::Box, vec::Vec};
 use bcm2835_lpa::Peripherals;
 use critical_section::{CriticalSection, Mutex};
 
-use crate::{dsb, timer::timer_get_usec_raw};
+use crate::{debug::Registers, dsb, steal_println, timer::timer_get_usec_raw};
 
 // registers for ARM interrupt control
 // bcm2835; p112   [starts at 0x2000b200]
@@ -217,10 +217,33 @@ software_interrupt_asm:
     @ bl syscall_vector
 prefetch_abort_asm:
     mov sp, {INT_STACK_ADDR}
-    push {{r0-r12,lr}}
+    push {{lr}}
+    push {{r0-r12}}
+    @ grab the registers
+    cps {SYSTEM_MODE}
+    mov r2,r13
+    mov r3,r14
+    cps {ABORT_MODE}
+    push {{r2-r3}}
+    @ switch to system, set r2, r3 to r13, r14
+    @ switch back
+    @ push r2, r3
     sub r0, lr, #4
+
+    @ mrs r1, cpsr
+    
+    mov r1, sp
     bl prefetch_abort_vector
-    pop {{r0-r12,lr}}
+    pop {{r2-r3}}
+    cps {SYSTEM_MODE}
+    mov r13,r2
+    mov r14,r3
+    cps {ABORT_MODE}
+    @ pop r2, r3
+    @ switch to system, set r13, r14 to r2, r3
+    @ switch back
+    pop {{r0-r12}}
+    pop {{lr}}
     sub lr, lr, #4
     movs pc, lr 
 data_abort_asm:
@@ -291,6 +314,8 @@ _interrupt_table_fast:
 "#,
     INT_STACK_ADDR = const INT_STACK_ADDR,
     USER_MODE = const super::setup::USER_MODE,
+    SYSTEM_MODE = const super::setup::SYSTEM_MODE,
+    ABORT_MODE = const super::setup::ABORT_MODE,
 );
 
 mod asm {
@@ -387,8 +412,21 @@ extern "C" fn undefined_instruction_vector(pc: u32) {
     panic!("unexpected undef-inst: pc={}\n", pc);
 }
 #[no_mangle]
-extern "C" fn prefetch_abort_vector(pc: u32) {
-    crate::debug::prefetch_abort_vector(pc);
+extern "C" fn prefetch_abort_vector(pc: u32, sp: u32) {
+    // Registers 0-14
+    let dump: &[u32; 15] = unsafe {
+        core::slice::from_raw_parts(sp as *const u32, 15)
+            .try_into()
+            .unwrap()
+    };
+    let registers = Registers {
+        pc,
+        lr: dump[1],
+        sp: dump[0],
+        // Performs a copy.
+        r: dump[2..].try_into().unwrap(),
+    };
+    crate::debug::prefetch_abort_vector(pc, &registers);
 }
 #[no_mangle]
 extern "C" fn data_abort_vector(pc: u32) {

@@ -210,6 +210,14 @@ macro_rules! println {
 }
 
 #[macro_export]
+macro_rules! steal_print {
+    ($( $args:tt)* ) => {
+        let mut w = &mut unsafe { $crate::uart::UartWriter::steal() };
+        core::fmt::Write::write_fmt(&mut w, format_args!($($args)*)).unwrap();
+    };
+}
+
+#[macro_export]
 macro_rules! steal_println {
     ($( $args:tt)* ) => {
         let mut w = &mut unsafe { $crate::uart::UartWriter::steal() };
