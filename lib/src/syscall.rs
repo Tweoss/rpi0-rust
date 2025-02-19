@@ -1,5 +1,6 @@
 use core::arch::asm;
 
+use crate::debug::{set_breakpoint_address, set_breakpoint_status, BreakpointStatus};
 use crate::setup::rpi_reboot;
 use crate::{
     caches, cycle_counter,
@@ -16,11 +17,16 @@ pub fn syscall_vector(pc: u32) -> i32 {
         "must be a SWI instruction"
     );
     let syscall = instruction & 0xFFF;
-    println!("got syscall: pc = {pc}, {syscall}\n");
+    // println!("got syscall: pc = {pc}, {syscall}\n");
     match syscall {
         0 => 0,
         1 => 0,
         2 => -1,
+        3 => {
+            set_breakpoint_address(0);
+            set_breakpoint_status(BreakpointStatus::Enabled { matching: false });
+            0
+        }
         _ => unimplemented!("Syscall {syscall} not yet implemented."),
     }
 }
@@ -49,6 +55,22 @@ pub fn syscall_error() -> i32 {
              swi 2
              pop {{lr}}
              mov {x}, r0",
+             x = out(reg) x,
+        )
+    }
+    x
+}
+
+pub extern "C" fn syscall_enable_breakpoint_mismatch(v: u32) -> u32 {
+    let mut x;
+    unsafe {
+        asm!(
+            "push {{lr}}
+             mov r0,{v}
+             swi 3
+             pop {{lr}}
+             mov {x}, r0",
+             v = in(reg) v,
              x = out(reg) x,
         )
     }

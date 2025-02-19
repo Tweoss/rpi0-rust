@@ -124,9 +124,8 @@ fast_interrupt_asm:
 
 _reset_asm:                   .word reset_asm
 _undefined_instruction_asm:   .word undefined_instruction_asm
-@ temporarily use plus1 instead
-@ _software_interrupt_asm:      .word software_interrupt_asm
-_software_interrupt_asm:      .word sys_plus1_handler
+_software_interrupt_asm:      .word software_interrupt_asm
+@ _software_interrupt_asm:      .word sys_plus1_handler
 _prefetch_abort_asm:          .word prefetch_abort_asm
 _data_abort_asm:              .word data_abort_asm
 _interrupt_asm:               .word interrupt_asm
