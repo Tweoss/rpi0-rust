@@ -2,7 +2,7 @@
 //!
 use core::cell::RefCell;
 
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, rc::Rc, vec::Vec};
 use bitfield::bitfield;
 use critical_section::Mutex;
 
@@ -35,6 +35,7 @@ pub struct Registers {
 static PREVIOUS_REGISTERS: Mutex<RefCell<Option<Registers>>> = Mutex::new(RefCell::new(None));
 
 static THREADS: Mutex<RefCell<Vec<Thread>>> = Mutex::new(RefCell::new(Vec::new()));
+static FINISHED_THREADS: Mutex<RefCell<Vec<Thread>>> = Mutex::new(RefCell::new(Vec::new()));
 
 struct Thread {
     function_pointer: usize,
@@ -68,6 +69,21 @@ impl Thread {
             current_count: 0,
         }
     }
+
+    fn reset(mut self, f: extern "C" fn()) -> Self {
+        let pc = f as *const u32 as usize;
+        self.function_pointer = pc;
+        self.registers.lr = thread_finished as *const () as u32;
+        self.registers.pc = pc as u32;
+        self.registers.sp =
+            unsafe { (&self.stack[0] as *const u32).offset(self.stack.len() as isize) } as u32;
+        // TODO: could reset registers, but meh
+        // self.finished = false; // necessary?
+        self.switch_at = None;
+        self.current_count = 0;
+
+        self
+    }
 }
 
 // static A_INSTRUCTION_COUNT: Mutex<RefCell<usize>> = Mutex::new(RefCell::new(0));
@@ -77,101 +93,72 @@ impl Thread {
 static RUNNING_INTERLEAVING: Mutex<RefCell<Option<(usize, Registers)>>> =
     Mutex::new(RefCell::new(None));
 
+static SCHEDULER: Mutex<RefCell<Option<Scheduler>>> = Mutex::new(RefCell::new(None));
+struct Scheduler(Rc<dyn Fn(usize, &[Thread]) -> usize>);
+unsafe impl Send for Scheduler {}
+
 pub fn prefetch_abort_vector(pc: u32, registers: Registers) -> Registers {
     let cs = unsafe { critical_section::CriticalSection::new() };
 
-    if RUNNING_INTERLEAVING.borrow_ref_mut(cs).is_none() {
-        if pc == run_interleaving as *const () as u32 {
-            steal_println!("STARTING INTERLAVINg");
+    let mut running_option = RUNNING_INTERLEAVING.borrow_ref_mut(cs);
+    let Some(running) = running_option.as_mut() else {
+        if pc == trigger_interleaving as *const () as u32 {
+            steal_println!("STARTING INTERLEAVING");
             let threads = THREADS.borrow_ref_mut(cs);
             let thread = threads
                 .last()
                 .expect("tried to start threading without a thread");
             let index = threads.len() - 1;
-            *RUNNING_INTERLEAVING.borrow_ref_mut(cs) = Some((index, registers));
+            *running_option = Some((index, registers));
             return thread.registers.clone();
         }
         // steal_println!("not running interleaving, continuing");
         set_breakpoint_address(pc);
         return registers;
-    }
+    };
 
+    let mut threads = THREADS.borrow_ref_mut(cs);
+    let mut borrow_ref_mut = SCHEDULER.borrow_ref_mut(cs);
+    let scheduler = borrow_ref_mut.as_mut().unwrap();
     // We are threading.
-    // TODO: handle interleaving
+    threads[running.0].registers = registers.clone();
+    threads[running.0].current_count += 1;
+
     // Disable single stepping and also switch between threads.
     if pc == thread_finished as *const () as u32 {
         steal_println!("thread finished");
-        let mut threads = THREADS.borrow_ref_mut(cs);
-        let mut running = RUNNING_INTERLEAVING.borrow_ref_mut(cs);
-        let inner = running.as_mut().unwrap();
-        threads.remove(inner.0);
-        if let Some(next_thread) = threads.last() {
-            let index = threads.len() - 1;
-            inner.0 = index;
-            return next_thread.registers.clone();
+        // TODO: reuse the stack buffer
+        let mut done = threads.remove(running.0);
+        done.finished = true;
+        FINISHED_THREADS.borrow_ref_mut(cs).push(done);
+        if threads.is_empty() {
+            set_breakpoint_status(BreakpointStatus::Disabled);
+            return running_option.take().unwrap().1;
+        } else {
+            running.0 = threads.len() - 1;
+            let decision = scheduler.0(running.0, &threads);
+            if (0..threads.len()).contains(&decision) {
+                running.0 = decision;
+                // set_breakpoint_address(threads[running.0].registers.pc);
+            } else {
+                panic!("scheduler decision out of range");
+            }
+            running.0 = decision;
+            return threads[decision].registers.clone();
         }
-
-        set_breakpoint_status(BreakpointStatus::Disabled);
-        return running.take().unwrap().1;
     }
     if let BreakpointStatus::Enabled { matching: false } = get_breakpoint_status() {
-        // Update the pc for single stepping.
-        set_breakpoint_address(pc);
-        return registers.clone();
+        let decision = scheduler.0(running.0, &threads);
+        if !(0..threads.len()).contains(&decision) {
+            panic!("scheduler decision out of range");
+        }
+        running.0 = decision;
+        set_breakpoint_address(threads[running.0].registers.pc);
+        return threads[running.0].registers.clone();
     }
 
     return registers;
-
-    let mut prev = PREVIOUS_REGISTERS.borrow_ref_mut(cs);
-
-    // Have entered a.
-    // let a_switch_addr = (a as *mut ()) as usize + *A_INSTRUCTION_COUNT.borrow_ref(cs) * 8;
-
-    // if pc as usize == a_switch_addr {
-    //     // if A_INSTRUCTION_COUNT == 0 {
-
-    //     // }
-    //     steal_println!("running b");
-    //     b();
-    // }
-
-    if let Some(p) = &*prev {
-        let r = registers;
-        steal_print!("updates: ");
-        if r.pc != p.pc {
-            steal_print!("pc = {}, ", r.pc);
-        }
-        if r.lr != p.lr {
-            steal_print!("lr = {}, ", r.lr);
-        }
-        if r.sp != p.sp {
-            steal_print!("sp = {}, ", r.sp);
-        }
-        steal_println!("");
-    }
-    // Disable single stepping and also switch between threads.
-    if pc == spawn as *const () as u32 {
-        dbg!(registers.r[0]);
-        steal_println!("pushing back");
-        // set_breakpoint_status(BreakpointStatus::Disabled);
-        return registers.clone();
-    }
-
-    // steal_println!("registers: {:?}", registers);
-    steal_println!("step pc: {:04x}", pc);
-    *prev = Some(registers.clone());
-    // Disable single stepping.
-    if pc == disable_single_stepping as *const () as u32 {
-        steal_println!("disabling single stepping");
-        set_breakpoint_status(BreakpointStatus::Disabled);
-        return registers.clone();
-    }
-    if let BreakpointStatus::Enabled { matching: false } = get_breakpoint_status() {
-        // Update the pc for single stepping.
-        set_breakpoint_address(pc);
-        return registers.clone();
-    }
-    panic!("unexpected prefetch abort: pc={}\n", pc);
+    // panic!("unexpected prefetch abort: pc={}\n", pc);
 }
 
 bitfield! {
@@ -345,16 +332,24 @@ pub fn setup() {
 static mut SHARED_STATE: usize = 0;
 
 #[inline(never)]
-fn spawn(f: extern "C" fn() -> ()) {
+fn spawn(thread: Thread) {
+    // fn spawn(f: extern "C" fn() -> ()) {
     // TODO: push back onto threads
     critical_section::with(|cs| {
-        THREADS.borrow_ref_mut(cs).push(Thread::from_fn(f));
+        THREADS.borrow_ref_mut(cs).push(thread);
     });
-    core::hint::black_box(f);
+    // core::hint::black_box(f);
+}
+
+fn run_interleaving(scheduler: Rc<dyn Fn(usize, &[Thread]) -> usize>) {
+    critical_section::with(|cs| {
+        *SCHEDULER.borrow_ref_mut(cs) = Some(Scheduler(scheduler));
+    });
+    trigger_interleaving();
 }
 
 #[inline(never)]
-fn run_interleaving() {
+fn trigger_interleaving() {
     core::hint::black_box(0);
 }
 
@@ -384,10 +379,52 @@ fn check_state_success() -> bool {
 extern "C" fn umain() -> ! {
     // TODO: allow spawn to set current offset (still exit if hit thread_finished though)
     //       have run_interleaving return whether or not finished
-    spawn(a);
-    spawn(b);
+    let a_thread = Thread::from_fn(a);
+    let b_thread = Thread::from_fn(b);
+    spawn(a_thread);
+    spawn(b_thread);
 
-    run_interleaving();
+    // static A_SWITCH
+    let scheduler = Rc::new(|current, threads: &[Thread]| {
+        // If the last thing has been run at least once, try to run the first.
+        if threads[threads.len() - 1].current_count == 1 {
+            return 0;
+        }
+        current
+    });
+    run_interleaving(scheduler.clone());
+
+    let (a_thread, b_thread) = critical_section::with(|cs| {
+        (
+            FINISHED_THREADS.borrow_ref_mut(cs).pop().unwrap(),
+            FINISHED_THREADS.borrow_ref_mut(cs).pop().unwrap(),
+        )
+    });
+    assert!(a_thread.finished);
+    assert!(b_thread.finished);
+    let a_end = a_thread.current_count;
+    let b_end = b_thread.current_count;
+    spawn(a_thread.reset(a));
+    spawn(b_thread.reset(b));
+
+    for a_stop in 0..a_end {
+        for b_stop in 0..b_end {}
+    }
+
+    loop {
+        run_interleaving(scheduler.clone());
+
+        let (a_thread, b_thread) = critical_section::with(|cs| {
+            (
+                FINISHED_THREADS.borrow_ref_mut(cs).pop().unwrap(),
+                FINISHED_THREADS.borrow_ref_mut(cs).pop().unwrap(),
+            )
+        });
+        assert!(a_thread.finished);
+        assert!(b_thread.finished);
+        spawn(a_thread.reset(a));
+        spawn(b_thread.reset(b));
+    }
 
     // let a = 1;
     // let mut b = a + a;
