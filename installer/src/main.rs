@@ -38,7 +38,7 @@ fn transmit(program: &[u8]) -> Result<(), eyre::Report> {
     println!("listening for prog info req");
     loop {
         let new_value = uart
-            .getu8(Duration::from_millis(10))
+            .getu8(Duration::from_secs(10))
             .context("waiting for prog info req")?;
         v = (v >> 8) + ((new_value as u32) << 24);
         count += 1;
@@ -63,11 +63,11 @@ fn transmit(program: &[u8]) -> Result<(), eyre::Report> {
     uart.put32(checksum)?;
 
     // Ignore trailing GET_PROG_INFO bytes.
-    let mut byte = uart.getu8(Duration::from_secs(1))?;
+    let mut byte = uart.getu8(Duration::from_secs(300))?;
     let mut trailing_bytes = vec![];
     while is_pi_get_prog_info_byte(byte) {
         trailing_bytes.push(byte);
-        byte = uart.getu8(Duration::from_secs(1)).with_context(|| {
+        byte = uart.getu8(Duration::from_secs(10)).with_context(|| {
             format!(
                 "clearing prog info bytes: {}",
                 trailing_bytes
@@ -81,7 +81,7 @@ fn transmit(program: &[u8]) -> Result<(), eyre::Report> {
     // Get remaining bytes.
     let mut next = (byte as u32) << 24;
     for _ in 1..4 {
-        let byte = uart.getu8(Duration::from_secs(1))?;
+        let byte = uart.getu8(Duration::from_secs(10))?;
         next = (next >> 8) + ((byte as u32) << 24);
     }
 
@@ -120,7 +120,7 @@ fn transmit(program: &[u8]) -> Result<(), eyre::Report> {
 
     let mut last_chars = VecDeque::new();
     loop {
-        let c = uart.getu8(Duration::from_secs(10))?;
+        let c = uart.getu8(Duration::from_secs(300))?;
         print!("{}", c as char);
         std::io::stdout().flush()?;
         last_chars.push_back(c as char);

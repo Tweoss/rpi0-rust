@@ -9,3 +9,4 @@ bitfield = "0.18.1"
 critical-section = { version = "1.2.0", features = ["restore-state-bool"] }
 frunk = { version = "0.4.3", default-features = false }
 heapless = "0.8.0"
+crc = "3.2.1"

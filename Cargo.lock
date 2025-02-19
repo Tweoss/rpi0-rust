@@ -183,6 +183,7 @@ version = "0.1.0"
 dependencies = [
  "bcm2835-lpa",
  "bitfield",
+ "crc",
  "critical-section",
  "frunk",
  "heapless",
