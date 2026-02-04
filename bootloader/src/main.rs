@@ -12,7 +12,7 @@ use bootloader_shared::{
     PI_GET_PROG_INFO, PI_SUCCESS,
 };
 use pi0_lib::{
-    gpio::{Pin, PinFsel},
+    gpio::{Pin, Unset},
     setup::{rpi_reboot, STACK_ADDR, SUPER_MODE},
     timer,
     uart::{read_uart, read_uart_u32_timeout, setup_uart, store_uart, write_uart_u32},
@@ -65,11 +65,11 @@ pub unsafe extern "C" fn rsstart() -> ! {
 }
 
 fn main() {
-    let p0 = unsafe { Pin::<0, { PinFsel::Unset }>::forge() };
+    let p0 = unsafe { Pin::<0, Unset>::forge() };
     let mut p0 = p0.into_output();
     let uart = setup_uart(
-        unsafe { Pin::<14, { PinFsel::Unset }>::forge() },
-        unsafe { Pin::<15, { PinFsel::Unset }>::forge() },
+        unsafe { Pin::<14, Unset>::forge() },
+        unsafe { Pin::<15, Unset>::forge() },
         unsafe { &mut Peripherals::steal() },
     );
     store_uart(uart);

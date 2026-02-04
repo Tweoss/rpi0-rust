@@ -1,7 +1,7 @@
 use core::{arch::asm, cell::RefCell, time::Duration};
 
 use crate::{
-    gpio::{Pin, PinFsel},
+    gpio::{Alt5, Pin, Unset},
     timer,
 };
 use bcm2835_lpa::{Peripherals, UART1};
@@ -13,8 +13,8 @@ const ASSUMED_CLOCK_RATE: usize = 250_000_000;
 const DESIRED_BAUD_RATE: usize = 115_200 * 8;
 
 pub fn setup_uart(
-    p14: Pin<14, { PinFsel::Unset }>,
-    p15: Pin<15, { PinFsel::Unset }>,
+    p14: Pin<14, Unset>,
+    p15: Pin<15, Unset>,
     peripherals: &mut Peripherals,
 ) -> UartWriter {
     critical_section::with(|_| {
@@ -136,8 +136,8 @@ pub fn read_all_uart(dest: &mut [u8]) {
 pub static UART_WRITER: Mutex<RefCell<Option<UartWriter>>> = Mutex::new(RefCell::new(None));
 
 pub struct UartWriter {
-    _p14: Pin<14, { PinFsel::Alt5 }>,
-    _p15: Pin<15, { PinFsel::Alt5 }>,
+    _p14: Pin<14, Alt5>,
+    _p15: Pin<15, Alt5>,
 }
 
 impl UartWriter {
@@ -231,7 +231,7 @@ pub mod software {
 
     use crate::{
         cycle_counter::{delay_until, read},
-        gpio::{valid_pin, If, Pin, PinFsel, True},
+        gpio::{is_input, is_output, valid_pin, If, Output, Pin, PinFsel, True, Unset},
         timer::delay_ms,
     };
 
@@ -239,14 +239,17 @@ pub mod software {
     where
         If<{ valid_pin(INDEX) }>: True,
     {
-        pin: Pin<INDEX, { PinFsel::Output }>,
+        pin: Pin<INDEX, Output>,
     }
 
     impl<const INDEX: usize> SWUart<INDEX>
     where
         If<{ valid_pin(INDEX) }>: True,
     {
-        pub fn setup_output(pin: Pin<INDEX, { PinFsel::Unset }>) -> Self {
+        pub fn setup_output<const O: PinFsel>(pin: Pin<INDEX, Unset>) -> Self
+        where
+            If<{ is_output(O) }>: True,
+        {
             critical_section::with(|_| {
                 let mut pin = pin.into_output();
                 pin.write(true);
@@ -289,7 +292,7 @@ pub mod software {
             }
         }
 
-        pub fn consume(self) -> Pin<INDEX, { PinFsel::Output }> {
+        pub fn consume(self) -> Pin<INDEX, Output> {
             self.pin
         }
     }

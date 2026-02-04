@@ -1,5 +1,5 @@
 //! # Handle GPIO pins
-use core::marker::ConstParamTy_;
+use core::marker::{ConstParamTy_, PhantomData};
 
 const PIN_COUNT: usize = 54;
 
@@ -13,12 +13,20 @@ enum PinState {
 }
 
 pub struct If<const COND: bool>;
+pub struct If2<const COND: bool>;
 pub const fn valid_pin(n: usize) -> bool {
     n < PIN_COUNT
+}
+pub const fn is_output(fsel: PinFsel) -> bool {
+    matches!(fsel, PinFsel::Output)
+}
+pub const fn is_input(fsel: PinFsel) -> bool {
+    matches!(fsel, PinFsel::Input)
 }
 
 pub trait True {}
 impl True for If<true> {}
+impl True for If2<true> {}
 
 #[derive(PartialEq, Eq, Debug)]
 pub enum PinFsel {
@@ -29,33 +37,56 @@ pub enum PinFsel {
     Alt5,
 }
 
+#[derive(Default)]
+pub struct Unset {}
+#[derive(Default)]
+pub struct Input {}
+#[derive(Default)]
+pub struct Output {}
+#[derive(Default)]
+pub struct Alt0 {}
+#[derive(Default)]
+pub struct Alt5 {}
+
+pub trait PinFselS {}
+impl PinFselS for Unset {}
+impl PinFselS for Input {}
+impl PinFselS for Output {}
+impl PinFselS for Alt0 {}
+impl PinFselS for Alt5 {}
+
 impl ConstParamTy_ for PinFsel {}
 
 /// A representation of a singular pin.
 /// The associated `FSEL` of type [`PinFsel`] indicates the compile-time state
 /// of the pin.
-pub struct Pin<const INDEX: usize, const FSEL: PinFsel>
+pub struct Pin<const INDEX: usize, FSEL>
 where
     If<{ valid_pin(INDEX) }>: True,
+    FSEL: PinFselS,
 {
-    _hidden: (),
+    _hidden: PhantomData<FSEL>,
 }
 
-impl<const INDEX: usize, const FSEL: PinFsel> core::fmt::Debug for Pin<INDEX, FSEL>
+impl<const INDEX: usize, FSEL: PinFselS + Default + core::fmt::Debug> core::fmt::Debug
+    for Pin<INDEX, FSEL>
 where
     If<{ valid_pin(INDEX) }>: True,
 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_fmt(format_args!("Pin<{INDEX}, {:?}>", FSEL))
+        f.write_fmt(format_args!("Pin<{INDEX}, {:?}>", FSEL::default()))
     }
 }
+impl<const I: usize, F: PinFselS> Pin<I, F> where If<{ valid_pin(I) }>: True {}
 
-impl<const I: usize, const F: PinFsel> Pin<I, F>
+impl<const I: usize, F: PinFselS> Pin<I, F>
 where
     If<{ valid_pin(I) }>: True,
 {
-    pub unsafe fn forge() -> Pin<I, { F }> {
-        Self { _hidden: () }
+    pub unsafe fn forge() -> Pin<I, F> {
+        Self {
+            _hidden: PhantomData::default(),
+        }
     }
 
     fn set_fsel(i: usize, and_mask: u32, or_mask: u32) {
@@ -74,39 +105,48 @@ where
         }
     }
 
-    pub fn erase(self) -> Pin<I, { PinFsel::Unset }> {
-        Pin::<I, { PinFsel::Unset }> { _hidden: () }
+    pub fn erase(self) -> Pin<I, Unset> {
+        Pin::<I, Unset> {
+            _hidden: PhantomData::default(),
+        }
     }
 
-    pub fn into_output(self) -> Pin<I, { PinFsel::Output }> {
+    pub fn into_output(self) -> Pin<I, Output> {
         let and = !(0b111 << ((I % 10) * 3));
         let or = 0b001 << ((I % 10) * 3);
         Self::set_fsel(I, and, or);
-        Pin::<I, { PinFsel::Output }> { _hidden: () }
+        Pin::<I, Output> {
+            _hidden: PhantomData::default(),
+        }
     }
-
-    pub fn into_input(self) -> Pin<I, { PinFsel::Input }> {
+    pub fn into_input(self) -> Pin<I, Input> {
         let and = !(0b111 << ((I % 10) * 3));
         Self::set_fsel(I, and, 0);
-        Pin::<I, { PinFsel::Input }> { _hidden: () }
+        Pin::<I, Input> {
+            _hidden: PhantomData::default(),
+        }
     }
 
-    pub fn into_alt0(self) -> Pin<I, { PinFsel::Alt0 }> {
+    pub fn into_alt0(self) -> Pin<I, Alt0> {
         let and = !(0b111 << ((I % 10) * 3));
         let or = 0b100 << ((I % 10) * 3);
         Self::set_fsel(I, and, or);
-        Pin::<I, { PinFsel::Alt0 }> { _hidden: () }
+        Pin::<I, Alt0> {
+            _hidden: PhantomData::default(),
+        }
     }
 
-    pub fn into_alt5(self) -> Pin<I, { PinFsel::Alt5 }> {
+    pub fn into_alt5(self) -> Pin<I, Alt5> {
         let and = !(0b111 << ((I % 10) * 3));
         let or = 0b010 << ((I % 10) * 3);
         Self::set_fsel(I, and, or);
-        Pin::<I, { PinFsel::Alt5 }> { _hidden: () }
+        Pin::<I, Alt5> {
+            _hidden: PhantomData::default(),
+        }
     }
 }
 
-impl<const I: usize> Pin<I, { PinFsel::Output }>
+impl<const I: usize> Pin<I, Output>
 where
     If<{ valid_pin(I) }>: True,
 {
@@ -130,7 +170,7 @@ where
     }
 }
 
-impl<const I: usize> Pin<I, { PinFsel::Input }>
+impl<const I: usize> Pin<I, Input>
 where
     If<{ valid_pin(I) }>: True,
 {

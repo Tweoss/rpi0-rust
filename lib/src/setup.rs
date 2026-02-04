@@ -1,6 +1,6 @@
 use core::{fmt::Write, ops::DerefMut, panic::PanicInfo};
 
-use crate::gpio::{Pin, PinFsel};
+use crate::gpio::{Pin, Unset};
 use crate::uart::UART_WRITER;
 use crate::{
     interrupts,
@@ -52,8 +52,8 @@ fn panic(info: &PanicInfo) -> ! {
     // If the uart is setup and not in use, then directly use it.
     // Otherwise, setup and write there.
     let construct_uart = || {
-        let p14 = unsafe { Pin::<14, { PinFsel::Unset }>::forge() };
-        let p15 = unsafe { Pin::<15, { PinFsel::Unset }>::forge() };
+        let p14 = unsafe { Pin::<14, Unset>::forge() };
+        let p15 = unsafe { Pin::<15, Unset>::forge() };
         setup_uart(p14, p15, unsafe { &mut Peripherals::steal() })
     };
 

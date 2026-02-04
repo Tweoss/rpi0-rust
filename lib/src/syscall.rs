@@ -3,11 +3,9 @@ use core::arch::asm;
 use crate::coprocessor::{
     set_breakpoint_address, set_breakpoint_status, set_vector_table_base, BreakpointStatus, CPSR,
 };
+use crate::gpio::Output;
 use crate::setup::rpi_reboot;
-use crate::{
-    cycle_counter,
-    gpio::{Pin, PinFsel},
-};
+use crate::{cycle_counter, gpio::Pin};
 
 use crate::{interrupts::run_user_code, println, timer::delay_ms};
 
@@ -85,7 +83,9 @@ extern "C" fn umain() -> ! {
     let v = syscall_error();
     println!("syscall_error {}", v);
     println!("FINISHED UMAIN\nDONE!!!");
-    let mut p0 = unsafe { Pin::<0, { PinFsel::Unset }>::forge().into_output() };
+    let mut p0: Pin<0, Output> = unsafe { todo!() };
+    // let mut p0: Pin<0,  Output > =
+    //     unsafe { Pin::<0,  Unset >::forge().into_output() };
     p0.write(true);
     let mut set_on = false;
     for _ in 0..4 {

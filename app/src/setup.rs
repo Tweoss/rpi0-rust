@@ -2,7 +2,7 @@ use bcm2835_lpa::Peripherals;
 use core::arch::{asm, global_asm};
 use pi0_lib::{
     cycle_counter, get_pins,
-    gpio::{Pin, PinFsel},
+    gpio::{Pin, Unset},
     interrupts::{gpio_interrupts_init, interrupt_init, timer_initialized},
     setup::{__bss_end__, __bss_start__, rpi_reboot, STACK_ADDR, SUPER_MODE},
     uart::{setup_uart, store_uart},
@@ -67,12 +67,12 @@ pub unsafe extern "C" fn rsstart() -> ! {
 
     let mut peripherals = unsafe { Peripherals::steal() };
     let pins = unsafe { get_pins() };
-    let (p14, pins): (Pin<14, { PinFsel::Unset }>, _) = pins.pluck();
-    let (p15, _pins): (Pin<15, { PinFsel::Unset }>, _) = pins.pluck();
+    let (p14, pins): (Pin<14, Unset>, _) = pins.pluck();
+    let (p15, _pins): (Pin<15, Unset>, _) = pins.pluck();
     let w = setup_uart(p14, p15, &mut peripherals);
     store_uart(w);
 
-    pi0_lib::virtual_memory::setup();
+    // pi0_lib::virtual_memory::setup();
 
     main();
     rpi_reboot();

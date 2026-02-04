@@ -1,16 +1,16 @@
 use frunk::HList;
 
-use crate::gpio::{Pin, PinFsel};
+use crate::gpio::Pin;
 
 // #[macro_export]
 macro_rules! HListType {
     ( $( $x:expr ),* ) => {
-        HList!($(Pin<$x, {PinFsel::Unset}>,)*)
+        HList!($(Pin<$x, crate::gpio::Unset>,)*)
     };
 }
 macro_rules! HListValue {
     ( $( $x:expr ),* ) => {
-        frunk::hlist![$(Pin::<$x, {PinFsel::Unset}>::forge(),)*]
+        frunk::hlist![$(Pin::<$x, crate::gpio::Unset>::forge(),)*]
     };
 }
 
