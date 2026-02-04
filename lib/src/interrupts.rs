@@ -37,7 +37,7 @@ const ARM_TIMER_IRQ_CLEAR: u32 = ARM_TIMER_BASE + 0x0c;
 // const ARM_TIMER_PREDIV: u32 = ARM_TIMER_BASE + 0x1c;
 // const ARM_TIMER_COUNTER: u32 = ARM_TIMER_BASE + 0x20;
 
-const INT_STACK_ADDR: u32 = 0x9000000;
+pub const INT_STACK_ADDR: u32 = 0x9000000;
 
 global_asm!(
     r#"
@@ -248,10 +248,10 @@ prefetch_abort_asm:
 data_abort_asm:
     mov sp, {INT_STACK_ADDR}
     push {{r0-r12,lr}}
-    sub r0, lr, #12
+    sub r0, lr, #8
     bl data_abort_vector
     pop {{r0-r12,lr}}
-    sub lr, lr, #12
+    sub lr, lr, #8
     movs pc, lr 
 
 @

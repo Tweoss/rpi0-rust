@@ -13,13 +13,9 @@ use core::cell::RefCell;
 use bcm2835_lpa::Peripherals;
 use critical_section::Mutex;
 use heapless::Deque;
-use pi0_lib::debug::{
-    disable_single_stepping, set_breakpoint_address, set_breakpoint_status, BreakpointStatus,
-    WatchpointStatus,
-};
 use pi0_lib::interrupts::{enable_interrupts, run_user_code};
 use pi0_lib::setup::rpi_reboot;
-use pi0_lib::{caches, dbg, timer};
+use pi0_lib::{dbg, timer};
 use pi0_lib::{
     get_pins,
     gpio::{Pin, PinFsel},
@@ -47,22 +43,15 @@ extern "C" fn print() {
 //
 
 fn main() {
-    let mut peripherals = unsafe { Peripherals::steal() };
-    let pins = unsafe { get_pins() };
-    let (p14, pins): (Pin<14, { PinFsel::Unset }>, _) = pins.pluck();
-    let (p15, _pins): (Pin<15, { PinFsel::Unset }>, _) = pins.pluck();
-    let w = setup_uart(p14, p15, &mut peripherals);
-    store_uart(w);
-
-    caches::enable();
+    // caches::enable();
 
     enable_interrupts();
 
-    pi0_lib::debug::demo();
+    // pi0_lib::debug::demo();
 
-    // let mut x: Box<u32> = Box::new(0);
-    // pi0_lib::debug::set_watchpoint_address(((x.as_ref()) as *const u32) as u32);
-    // pi0_lib::debug::set_watchpoint_status(WatchpointStatus::Enabled {
+    // let mut x: alloc::boxed::Box<u32> = alloc::boxed::Box::new(0);
+    // pi0_lib::coprocessor::set_watchpoint_address(((x.as_ref()) as *const u32) as u32);
+    // pi0_lib::coprocessor::set_watchpoint_status(pi0_lib::coprocessor::WatchpointStatus::Enabled {
     //     load: true,
     //     store: true,
     // });
@@ -79,7 +68,7 @@ fn main() {
 
     // // // set_breakpoint_status(BreakpointStatus::Disabled);
     // run_user_code(run_fib);
-    // syscall::demo();
+    // pi0_lib::syscall::demo();
     // print();
     // *x = 1;
     // core::hint::black_box(*x);

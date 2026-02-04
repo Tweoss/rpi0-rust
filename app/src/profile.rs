@@ -9,18 +9,10 @@ use pi0_lib::{
         timer_initialized,
     },
     print,
+    setup::__code_end__,
 };
 
 use crate::{println, profile, timer};
-
-extern "C" {
-    static mut __code_start__: u8;
-    static mut __code_end__: u8;
-    static mut __data_start__: u8;
-    static mut __data_end__: u8;
-    static mut __bss_start__: u8;
-    static mut __bss_end__: u8;
-}
 
 static GPROF: Mutex<RefCell<Option<Gprof>>> = Mutex::new(RefCell::new(None));
 

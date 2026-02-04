@@ -6,7 +6,7 @@
 #![allow(asm_sub_register)]
 
 mod allocator;
-pub mod caches;
+pub mod coprocessor;
 mod critical_section;
 pub mod cycle_counter;
 pub mod debug;
@@ -18,6 +18,7 @@ pub mod syscall;
 pub mod thread;
 pub mod timer;
 pub mod uart;
+pub mod virtual_memory;
 pub use pin_array::get_pins;
 
 extern crate alloc;
@@ -45,6 +46,17 @@ macro_rules! cp_asm_get {
     ($name: ident, $coprocessor: ident, $opcode1: literal, $Crn: ident, $Crm: ident, $opcode2: literal ) => {
         #[inline]
         fn $name() -> u32 {
+            crate::cp_asm_get!(inner $name, $coprocessor, $opcode1, $Crn, $Crm, $opcode2)
+        }
+    };
+    (pub $name: ident, $coprocessor: ident, $opcode1: literal, $Crn: ident, $Crm: ident, $opcode2: literal ) => {
+        #[inline]
+        pub fn $name() -> u32 {
+            crate::cp_asm_get!(inner $name, $coprocessor, $opcode1, $Crn, $Crm, $opcode2)
+        }
+    };
+    (inner $name: ident, $coprocessor: ident, $opcode1: literal, $Crn: ident, $Crm: ident, $opcode2: literal ) => {
+        {
             let v;
             unsafe {
                 core::arch::asm!(
@@ -74,24 +86,14 @@ macro_rules! cp_asm_set {
     ($name: ident, $coprocessor: ident, $opcode1: literal, $Crn: ident, $Crm: ident, $opcode2: literal ) => {
         #[inline]
         fn $name(v: u32) {
-            unsafe {
-                core::arch::asm!(
-                    concat!(
-                        "mcr ",
-                        stringify!($coprocessor),
-                        ", ",
-                        stringify!($opcode1),
-                        ", {v}, ",
-                        stringify!($Crn),
-                        ", ",
-                        stringify!($Crm),
-                        ", ",
-                        stringify!($opcode2)
-                    ),
-                    v = in(reg) v
-                );
-            }
-            // Prefetch flush.
+            crate::cp_asm_set_raw!(inner $name, $coprocessor, $opcode1, $Crn, $Crm, $opcode2, v);
+            crate::prefetch_flush();
+        }
+    };
+    (pub $name: ident, $coprocessor: ident, $opcode1: literal, $Crn: ident, $Crm: ident, $opcode2: literal ) => {
+        #[inline]
+        pub fn $name(v: u32) {
+            crate::cp_asm_set_raw!(inner $name, $coprocessor, $opcode1, $Crn, $Crm, $opcode2, v);
             crate::prefetch_flush();
         }
     };
@@ -103,6 +105,17 @@ macro_rules! cp_asm_set_raw {
     ($name: ident, $coprocessor: ident, $opcode1: literal, $Crn: ident, $Crm: ident, $opcode2: literal ) => {
         #[inline]
         fn $name(v: u32) {
+            crate::cp_asm_set_raw!(inner $name, $coprocessor, $opcode1, $Crn, $Crm, $opcode2, v)
+        }
+    };
+    (pub $name: ident, $coprocessor: ident, $opcode1: literal, $Crn: ident, $Crm: ident, $opcode2: literal ) => {
+        #[inline]
+        pub fn $name(v: u32) {
+            crate::cp_asm_set_raw!(inner $name, $coprocessor, $opcode1, $Crn, $Crm, $opcode2, v)
+        }
+    };
+    (inner $name: ident, $coprocessor: ident, $opcode1: literal, $Crn: ident, $Crm: ident, $opcode2: literal, $v: ident ) => {
+        {
             unsafe {
                 core::arch::asm!(
                     concat!(
@@ -117,7 +130,7 @@ macro_rules! cp_asm_set_raw {
                         ", ",
                         stringify!($opcode2)
                     ),
-                    v = in(reg) v
+                    v = in(reg) $v
                 );
             }
         }

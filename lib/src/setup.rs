@@ -10,6 +10,16 @@ use crate::{
 use bcm2835_lpa::Peripherals;
 use interrupts::disable_interrupts;
 
+extern "C" {
+    pub static mut __code_start__: u8;
+    pub static mut _start: u8;
+    pub static mut __code_end__: u8;
+    pub static mut __data_start__: u8;
+    pub static mut __data_end__: u8;
+    pub static mut __bss_start__: u8;
+    pub static mut __bss_end__: u8;
+}
+
 pub const SUPER_MODE: u32 = 0b10011;
 pub const SYSTEM_MODE: u32 = 0b11111;
 pub const ABORT_MODE: u32 = 0b10111;

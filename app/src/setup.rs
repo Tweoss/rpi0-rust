@@ -1,8 +1,11 @@
+use bcm2835_lpa::Peripherals;
 use core::arch::{asm, global_asm};
 use pi0_lib::{
-    cycle_counter,
+    cycle_counter, get_pins,
+    gpio::{Pin, PinFsel},
     interrupts::{gpio_interrupts_init, interrupt_init, timer_initialized},
-    setup::{rpi_reboot, STACK_ADDR, SUPER_MODE},
+    setup::{__bss_end__, __bss_start__, rpi_reboot, STACK_ADDR, SUPER_MODE},
+    uart::{setup_uart, store_uart},
 };
 
 use crate::main;
@@ -35,10 +38,6 @@ pub unsafe extern "C" fn rsstart() -> ! {
     // Safety: I *believe* this is sufficient to prevent compiler reorderings.
     // https://stackoverflow.com/questions/72823056/how-to-build-a-barrier-by-rust-asm
     asm!("");
-    extern "C" {
-        static mut __bss_start__: u8;
-        static mut __bss_end__: u8;
-    }
     // Not sure if this is sound.
     // Was unable to observe nonzeroed BSS before, so saw no change.
     let count = (&raw const __bss_end__).byte_offset_from(&raw const __bss_start__);
@@ -65,6 +64,15 @@ pub unsafe extern "C" fn rsstart() -> ! {
     pi0_lib::debug::setup();
 
     cycle_counter::init();
+
+    let mut peripherals = unsafe { Peripherals::steal() };
+    let pins = unsafe { get_pins() };
+    let (p14, pins): (Pin<14, { PinFsel::Unset }>, _) = pins.pluck();
+    let (p15, _pins): (Pin<15, { PinFsel::Unset }>, _) = pins.pluck();
+    let w = setup_uart(p14, p15, &mut peripherals);
+    store_uart(w);
+
+    pi0_lib::virtual_memory::setup();
 
     main();
     rpi_reboot();

@@ -4,7 +4,8 @@ use core::{
 };
 
 const HEAP_START: usize = 1024 * 1024;
-const ALLOCATED_AMOUNT: usize = 2 * 1024 * 1024;
+//TODO: reduce to 1 megabyte?
+const ALLOCATED_AMOUNT: usize = 1024 * 1024;
 
 #[global_allocator]
 static mut ALLOCATOR: WrappedBumpAllocator =
@@ -20,7 +21,7 @@ unsafe impl GlobalAlloc for WrappedBumpAllocator {
     unsafe fn alloc(&self, layout: alloc::Layout) -> *mut u8 {
         let mut a = LazyCell::<RefCell<BumpAllocator>>::force(&self.0).borrow_mut();
         let new_used = a.used + layout.size();
-        if new_used >= ALLOCATED_AMOUNT {
+        if new_used > ALLOCATED_AMOUNT {
             return core::ptr::null_mut();
         }
         let new_allocation = (HEAP_START as *mut u8).offset(a.used as isize);

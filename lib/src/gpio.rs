@@ -1,5 +1,5 @@
 //! # Handle GPIO pins
-use core::marker::{ConstParamTy_, UnsizedConstParamTy};
+use core::marker::ConstParamTy_;
 
 const PIN_COUNT: usize = 54;
 
@@ -29,7 +29,6 @@ pub enum PinFsel {
     Alt5,
 }
 
-impl UnsizedConstParamTy for PinFsel {}
 impl ConstParamTy_ for PinFsel {}
 
 /// A representation of a singular pin.
